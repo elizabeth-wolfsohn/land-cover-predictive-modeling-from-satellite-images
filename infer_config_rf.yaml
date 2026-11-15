@@ -1,0 +1,11 @@
+#
+# YAML configuration file for infer_rf.py
+#
+
+
+seed: 42
+dataset_folder: 'local_dataset'
+xp_rootdir: 'experiments'
+xp_name: last  
+set: val                 
+stride: 1

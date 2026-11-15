@@ -1,0 +1,42 @@
+# ---
+# #
+# # YAML configuration file for train_rf.py
+# #
+
+# # the random seed, for reproducibility
+# # if null, no random seed
+# seed: 42
+# max_images: 100
+# n_jobs: 2
+
+
+
+# dataset_folder: 'local_dataset/'
+# # the path to the root directory used to store experiments
+# # a directory per experiment will be created named with the datetime during execution
+# xp_rootdir: 'experiments/'
+
+
+# # Random Forest
+# n_per_image: 200
+# n_estimators: 50
+# max_depth: 25
+# min_samples_leaf: 5
+# class_weight: 'balanced_subsample'
+# max_features: 'sqrt'
+
+
+
+seed: 42
+dataset_folder: 'local_dataset'
+xp_rootdir: 'experiments'
+max_images: 500
+n_jobs: 2
+
+# Random Forest
+n_per_image: 200
+n_estimators: 100
+max_depth: 25
+min_samples_leaf: 5
+class_weight: 'balanced_subsample'
+max_features: 'sqrt'

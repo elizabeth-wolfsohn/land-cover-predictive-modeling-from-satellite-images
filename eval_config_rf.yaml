@@ -1,0 +1,9 @@
+# Dataset
+dataset_folder: local_dataset
+
+# Experiment
+xp_rootdir: experiments
+xp_name: last
+
+# Evaluation dataset
+set: val # train, val ou test
