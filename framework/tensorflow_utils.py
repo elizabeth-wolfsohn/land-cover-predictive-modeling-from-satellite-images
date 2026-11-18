@@ -14,8 +14,12 @@ def display_sample(display_list):
     fig, axs = plt.subplots(1, len(display_list), figsize=(18, 18))
     title = ['Input Image', 'True Mask', 'Predicted Mask']
     for i in range(len(display_list)):
+        array = display_list[i]
+        if i == 0:
+            # input image: keep the first 3 bands (R, G, B), drops NIR and the spectral indices
+            array = array[..., :3]
         axs[i].set_title(title[i])
-        axs[i].imshow(tf.keras.preprocessing.image.array_to_img(display_list[i]))
+        axs[i].imshow(tf.keras.preprocessing.image.array_to_img(array))
         axs[i].axis('off')
 
 
@@ -51,6 +55,7 @@ def plot_predictions(model, dataset=None, sample_batch=None, num=1, save_filepat
             if save_filepaths is not None:
                 fig = plt.gcf()
                 fig.savefig(save_filepaths[i], bbox_inches='tight', dpi=300)
+                plt.close(fig)
     else:
         image, mask = sample_batch
         pred_raster = model.predict(image)
@@ -60,3 +65,4 @@ def plot_predictions(model, dataset=None, sample_batch=None, num=1, save_filepat
             if save_filepaths is not None:
                 fig = plt.gcf()
                 fig.savefig(save_filepaths[i], bbox_inches='tight', dpi=300)
+                plt.close(fig)  # avoid accumulating figures in memory over the epochs

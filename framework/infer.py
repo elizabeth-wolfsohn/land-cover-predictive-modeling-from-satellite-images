@@ -13,6 +13,18 @@ import tensorflow as tf
 
 from framework.dataset import LandCoverData as LCD
 from framework.utils import YamlNamespace
+from framework.preprocessing.config import cfg_get
+from framework.preprocessing import spectral as spectral_mod
+from framework import inference_utils
+
+
+def load_train_config(xp_dir):
+    """The training config saved by train.py in the experiment folder, or None (old experiments)."""
+    path = Path(xp_dir)/'train_config.yaml'
+    if not path.is_file():
+        return None
+    with open(path, 'r') as f:
+        return YamlNamespace(yaml.safe_load(f))
 
 def numpy_parse_image(image_path):
     """Load an image as numpy array
@@ -121,7 +133,7 @@ if __name__ == '__main__':
     if config.set == 'test':
         test_files = sorted(config.dataset_folder.glob('test/images/*.tif'))
     else:
-        val_samples_s = pd.read_csv(config.xp_dir/'val_samples.csv', squeeze=True)
+        val_samples_s = pd.read_csv(config.xp_dir/'val_samples.csv')['sample_id']
         val_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in val_samples_s]
         if config.set == 'train':
             test_files = [
@@ -138,22 +150,46 @@ if __name__ == '__main__':
     #     assert f == str(bytes.decode(tensor.numpy()))
 
     test_dataset = test_dataset.map(parse_image, num_parallel_calls=N_CPUS)\
-        .map(load_image_test, num_parallel_calls=N_CPUS)\
+        .map(load_image_test, num_parallel_calls=N_CPUS)
+
+    # same spectral indices as during training (read from the saved training config)
+    spectral = spectral_mod.from_config(load_train_config(config.xp_dir))
+    if spectral is not None:
+        print(f"Appending spectral indices: {spectral}")
+        test_dataset = test_dataset.map(spectral.append, num_parallel_calls=N_CPUS)
+
+    test_dataset = test_dataset\
         .repeat(1)\
         .batch(config.batch_size)\
         .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
     # Load the trained model saved to disk
     model = tf.keras.models.load_model(str(config.xp_dir/f'checkpoints/epoch{config.checkpoint_epoch}'))
+    expected_channels = LCD.N_CHANNELS + (spectral.n_channels if spectral else 0)
+    if model.input_shape[-1] != expected_channels:
+        raise ValueError(f"the model expects {model.input_shape[-1]} input channels but the pipeline "
+                         f"gives {expected_channels}: check train_config.yaml in {config.xp_dir}")
 
     print(f"Predict the vectors over the {config.set} dataset")
-    y_pred = predict_as_vectors(model, test_dataset, steps=testset_size // config.batch_size)
+    steps = int(np.ceil(testset_size / config.batch_size))
+    out_suffix = ''
+    if getattr(config, 'prediction', None) is not None:
+        # optional: soft proportions and / or test-time augmentation (framework/inference_utils.py)
+        vector_mode = cfg_get(config, 'prediction.vector_mode', 'argmax')
+        tta = cfg_get(config, 'prediction.tta', 'none')
+        print(f"Prediction: vector_mode={vector_mode}, tta={tta}")
+        y_pred = inference_utils.predict_as_vectors(model, test_dataset, vector_mode=vector_mode,
+                                                    tta=tta, steps=steps)
+        if (vector_mode, tta) != ('argmax', 'none'):
+            out_suffix = f'_{vector_mode}_tta-{tta}'
+    else:
+        y_pred = predict_as_vectors(model, test_dataset, steps=steps)
 
     # get the samples ids
     ids_s = pd.Series([int(f.stem) for f in test_files], name='sample_id', dtype='uint32')
     df_y_pred = pd.DataFrame(
         y_pred, index=ids_s, columns=LCD.CLASSES
     )
-    out_csv = config.xp_dir/f'epoch{config.checkpoint_epoch}_{config.set}_predicted.csv'
+    out_csv = config.xp_dir/f'epoch{config.checkpoint_epoch}_{config.set}{out_suffix}_predicted.csv'
     print(f"Saving prediction CSV to file {str(out_csv)}")
     df_y_pred.to_csv(out_csv, index=True, index_label='sample_id')

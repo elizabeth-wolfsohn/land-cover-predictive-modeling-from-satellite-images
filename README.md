@@ -49,7 +49,7 @@ The `framework` package contains scripts to train the model, then use the traine
 
 To train the U-Net model on the training set for a certain number of epochs, use `framework/train.py` :
 ```
-ipython framework/train.py -- --config config.yaml
+ipython framework/train.py -- --config train_config.yaml
 ```
 The input is a YAML configuration file. See `train_config.yaml` for an example file with description of parameters, and values used in the benchmark.
 
@@ -69,7 +69,7 @@ Here, `experiments` is the root folder referenced by `xp_rootdir` in `config.yam
 
 After having trained your model, you can use `framework/infer.py` to predict the class-distribution vector targets over samples in the train, validation, or test set, and saved them in a CSV file, with the right format for submission:
 ```
-ipython framework/infer.py -- --config config.yaml
+ipython framework/infer.py -- --config infer_config.yaml
 ```
 The input is a YAML configuration file. See `infer_config.yaml` for an example file with description of parameters.
 
@@ -77,20 +77,45 @@ The input is a YAML configuration file. See `infer_config.yaml` for an example f
 
 The script `framework/eval.py` does the same thing as the evaluation done for submissions on the server. It computes the metric of the challenge (the Kullback-Leibler divergence) between a prediction CSV and a ground-truth CSV. Usage :
 ```
-ipython framework/eval.py -- --gt-file path/to/labels.csv --pred-file path/to/predicted.csv -o /path/to/save.csv
+ipython framework/eval.py -- --gt-file challenge-ens/data/dataset_csvs/train_labels.csv --pred-file challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_predicted.csv -o challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_score.csv
 ```
 Examples:
 * Evaluate on training set:
 
 ```
-ipython framework/eval.py -- --gt-file ../data/dataset_csvs/train_labels.csv --pred-file experiments/25-11-2020_20:40:43/epoch84_train_predicted.csv --out-csv experiments/25-11-2020_20:40:43/epoch84_train_predicted_score.csv
+ipython framework/eval.py -- --gt-file ../data/dataset_csvs/train_labels.csv --pred-file challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_train_predicted.csv --out-csv challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_train_score.csv
 ```
 where ../data/dataset_csvs/train_labels.csv is where is stored the *y_train* file of the challenge.
 
 * Evaluate on validation set:
 ```
-ipython framework/eval.py -- --gt-file ../data/dataset_csvs/train_labels.csv --pred-file experiments/25-11-2020_20:40:43/epoch84_val_predicted.csv --out-csv experiments/25-11-2020_20:40:43/epoch84_val_predicted_score.csv
+ipython framework/eval.py -- \
+  --gt-file challenge-ens/data/dataset_csvs/train_labels.csv \
+  --pred-file challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_predicted.csv \
+  --out-csv challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_score.csv
 ```
+
+### Optional preprocessing
+
+`framework/preprocessing/` adds optional features, each enabled by a section of `train_config.yaml` (all disabled by default: without them, the training is the benchmark one). Their effect can be inspected in `preprocessing_visualization.ipynb`, which reads the same config.
+
+| Section | What it does | Module |
+|---|---|---|
+| `tiling` | At every training, a random part of the train images (`intact_fraction`) is kept whole (256px), the rest is split into 128px tiles re-sampled to over-represent rare classes (Repeat Factor Sampling). 256px and 128px batches are mixed (`tile_batch_fraction`). The validation set is never touched. | `tile_stats.py`, `sampling.py`, `pipeline.py` |
+| `augmentation` | TensorFlow-native augmentation: flips / rotations, zoom, brightness, contrast, per-band color gains, noise. | `augmentation.py` |
+| `spectral_indices` | Appends NDVI and NDWI as extra input channels (train, validation and inference). | `spectral.py` |
+| `class_weighting` | Loss class weights `freq^-power`, computed on the re-sampled distribution when tiling is enabled. | `class_weights.py` |
+
+The per-tile class statistics are computed once (automatically on the first tiled training, or manually):
+```
+ipython framework/preprocessing/tile_stats.py -- --dataset-folder challenge-ens/data/dataset_UNZIPPED --tile-size 128 --out challenge-ens/data/tile_stats_128.csv
+```
+
+Each experiment folder then also contains `train_config.yaml` (the config used, read back by `infer.py`), `class_weights.txt`, and with tiling `preprocessing/` (the manifest of the draw, its seed, and the class distribution before / after re-sampling).
+
+At inference, the optional `prediction` section of `infer_config.yaml` enables soft class proportions (`vector_mode: softmax`) and test-time augmentation (`tta: flip` or `d4`), see `framework/inference_utils.py`.
+
+To compare experiments fairly, use the same validation set: set `val_samples_csv` to the `val_samples.csv` of a previous experiment.
 
 
 ## Model information

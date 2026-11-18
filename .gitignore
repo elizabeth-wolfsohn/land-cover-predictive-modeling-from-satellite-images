@@ -1,6 +1,8 @@
 # Project files and folders
 
 /experiments
+/dataset
+/challenge-ens
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

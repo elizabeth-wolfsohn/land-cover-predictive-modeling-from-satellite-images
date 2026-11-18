@@ -8,17 +8,99 @@
 seed: 42
 # the size of each batch of images when training
 # careful not to use a too large batch size, might lead to OOM errors
-batch_size: 32
+batch_size: 8
 # the number of epochs to train for
 epochs: 90
 # the learning rate
-lr: 0.001
+lr: 0.0001
 # the path to the root directory of the dataset
-dataset_folder: '~/challenge-ens/data/dataset_UNZIPPED'
+dataset_folder: './challenge-ens/data/dataset_UNZIPPED'
 # the path to the root directory used to store experiments
 # a directory per experiment will be created named with the datetime during execution
-xp_rootdir: '~/challenge-ens/code/experiments'
+xp_rootdir: './challenge-ens/code/experiments'
 # CSV file containing the samples to use in the validation set
 # if null, a random train/val split is performed, with 10% of the samples held out for validation
 # the validation samples will be saved to a file 'val_samples.csv' in the experiment directory
 val_samples_csv: null
+
+# =====================================================================================
+# OPTIONAL PREPROCESSING (framework/preprocessing/)
+# Every section below is optional: delete it or set `enabled: false` to get the
+# benchmark training. Visualize the effect of each option in preprocessing_visualization.ipynb
+# =====================================================================================
+
+# --- Tiling + re-sampling, re-drawn at every training ---------------------------------
+# Train images (validation excluded, never touched) are split at every training into:
+#   * a random 'intact' part, kept whole (256x256)
+#   * the rest, split into tiles (tile_size) and re-sampled so that tiles containing rare
+#     classes appear more often (Repeat Factor Sampling, see framework/preprocessing/sampling.py)
+# Batches are either 256px images or 128px tiles, mixed in a given proportion.
+tiling:
+  enabled: false
+  # per-tile class counts, computed once (automatically if missing) by
+  # framework/preprocessing/tile_stats.py
+  tile_stats_csv: './challenge-ens/data/tile_stats_128.csv'
+  tile_size: 128
+  # fraction of the train images kept whole, drawn again at every training
+  intact_fraction: 0.3
+  # fraction of the batches that are tile batches (the others are 256px batches)
+  tile_batch_fraction: 0.5
+  # null -> batch_size * (256 / tile_size)^2 (same number of pixels, same GPU memory)
+  tile_batch_size: null
+  # null -> new random draw at every training (the seed is saved in <xp_dir>/preprocessing/)
+  # set an integer to reproduce a previous draw
+  resample_seed: null
+  # pool tiles with more than this share of ignored pixels (no_data + clouds) are dropped
+  max_ignored_fraction: 0.5
+  # null -> one epoch = as many pixels as one pass over the manifest
+  steps_per_epoch: null
+  resampling:
+    enabled: true
+    # a class is 'present' in a tile if it covers at least this share of it
+    min_pixel_fraction: 0.01
+    # classes present in less than this fraction of the tiles are over-sampled
+    threshold: 0.1
+    # a tile is repeated at most this many times (limits over-fitting on rare tiles)
+    max_repeat: 4
+
+# --- Data augmentation (TensorFlow native) ----------------------------------------------
+# geometric transforms apply to image + mask, photometric ones to the spectral bands only
+augmentation:
+  enabled: false
+  flip_rot90: true
+  zoom:
+    prob: 0.3
+    min_scale: 0.6      # the crop side is in [min_scale, 1] x image side
+  brightness:
+    prob: 0.5
+    range: [0.9, 1.1]
+  contrast:
+    prob: 0.5
+    range: [0.85, 1.15]
+  color:                # one random gain per band (R, G, B, NIR)
+    prob: 0.5
+    range: [0.93, 1.07]
+  noise:
+    prob: 0.0
+    std: 0.02           # relative to the mean of each band
+
+# --- Spectral indices appended as extra input channels (train, validation, inference) ---
+spectral_indices:
+  enabled: false
+  indices: ['ndvi', 'ndwi']
+  # position of each band in the images (check it in preprocessing_visualization.ipynb)
+  band_order:
+    red: 0
+    green: 1
+    blue: 2
+    nir: 3
+
+# --- Class weights of the loss -----------------------------------------------------------
+# w(c) = freq(c)^(-power), normalized to an average pixel weight of 1, clipped to max_weight
+# power: 0 = no re-balancing, 0.5 = inverse sqrt frequency, 1 = inverse frequency
+# with tiling re-sampling, prefer a lower power (e.g. 0.25) to avoid compensating twice
+class_weighting:
+  power: 0.5
+  max_weight: 10.0
+  # 'manifest': frequencies of the re-sampled training set (only with tiling), 'static': whole train set
+  counts_source: 'manifest'
