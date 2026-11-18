@@ -30,7 +30,7 @@
 seed: 42
 dataset_folder: 'local_dataset'
 xp_rootdir: 'experiments'
-max_images: 500
+max_images:
 n_jobs: 2
 
 # Random Forest
@@ -40,3 +40,4 @@ max_depth: 25
 min_samples_leaf: 5
 class_weight: 'balanced_subsample'
 max_features: 'sqrt'
+

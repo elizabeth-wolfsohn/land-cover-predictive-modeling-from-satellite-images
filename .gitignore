@@ -17,6 +17,11 @@ train_config.yaml
 data_visualization.ipynb
 framework/tensorflow_utils.py
 
+.rfvenv/
+.segformervenv/
+dataset/
+
+
 
 archive/
 
