@@ -4,5 +4,5 @@ tqdm
 tifffile
 PyYAML
 scikit-learn
-tensorflow
 iterative-stratification
+matplotlib
