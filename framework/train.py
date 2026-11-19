@@ -4,6 +4,7 @@ Train the model.
 from pathlib import Path
 import datetime
 import argparse
+import itertools
 import yaml
 import random
 import numpy as np
@@ -53,6 +54,53 @@ class PlotCallback(tf.keras.callbacks.Callback):
         plot_predictions(self.model, self.dataset, self.sample_batch, num=self.num, save_filepaths=save_filepaths)
 
 
+def _optional_config_value(config, key, default=None):
+    """Renvoie config.<key>, ou `default` si la clé est absente du fichier YAML."""
+    try:
+        value = getattr(config, key)
+    except (AttributeError, KeyError):
+        return default
+    return default if value is None else value
+
+
+def _optional_file(config, key):
+    """Lit une clé de chemin optionnelle et vérifie que le fichier existe."""
+    value = _optional_config_value(config, key)
+    if value is None:
+        return None
+    path = Path(value).expanduser()
+    assert path.is_file(), f"{key} : fichier introuvable : {path}"
+    return path
+
+
+def _read_ids(csv_path: Path) -> list:
+    """Lit un CSV d'une seule colonne d'identifiants d'images (nnnnn), avec ou sans en-tête.
+
+    Renvoie une liste d'entiers. Lève une erreur si une valeur n'est pas numérique
+    (hors éventuelle ligne d'en-tête) ou si un identifiant apparaît deux fois.
+    """
+    col = pd.read_csv(csv_path, header=None, dtype=str).iloc[:, 0].str.strip()
+    ids = pd.to_numeric(col, errors='coerce')
+    bad = ids.isna()
+    # seule la première ligne a le droit d'être non numérique (en-tête, ex. "sample_id")
+    if bad.iloc[1:].any():
+        raise ValueError(f"{csv_path} : valeurs non numériques : {col[bad].tolist()[:10]}")
+    ids = ids[~bad].astype(np.int64)
+    duplicated = ids[ids.duplicated()]
+    if len(duplicated):
+        raise ValueError(f"{csv_path} : identifiants en double : {duplicated.tolist()[:10]}")
+    return ids.tolist()
+
+
+def _ids_to_files(ids: list, files_by_id: dict, csv_path: Path) -> list:
+    """Convertit des identifiants en chemins de fichiers .tif, en signalant les absents."""
+    missing = [i for i in ids if i not in files_by_id]
+    if missing:
+        raise FileNotFoundError(
+            f"{csv_path} : {len(missing)} image(s) absente(s) de train/images, ex. {missing[:10]}")
+    return [files_by_id[i] for i in ids]
+
+
 def _parse_args():
     parser = argparse.ArgumentParser('Training script')
     parser.add_argument('--config', '-c', type=str, required=True, help="The YAML config file")
@@ -64,10 +112,15 @@ def _parse_args():
     config.xp_rootdir = Path(config.xp_rootdir).expanduser()
     assert config.xp_rootdir.is_dir()
     config.dataset_folder = Path(config.dataset_folder).expanduser()
+    print(config.dataset_folder)
     assert config.dataset_folder.is_dir()
-    if config.val_samples_csv is not None:
-        config.val_samples_csv = Path(config.val_samples_csv).expanduser()
-        assert config.val_samples_csv.is_file()
+    # découpage prédéfini train / val / test (optionnel)
+    config.train_image_path = _optional_file(config, 'train_image_path')
+    config.val_image_path = _optional_file(config, 'val_image_path')
+    config.test_image_path = _optional_file(config, 'test_image_path')
+    config.evaluate_on_test = bool(_optional_config_value(config, 'evaluate_on_test', False))
+    # ancien mode : seule la liste de validation est fournie
+    config.val_samples_csv = _optional_file(config, 'val_samples_csv')
 
     return config
 
@@ -86,24 +139,49 @@ if __name__ == '__main__':
     N_CPUS = multiprocessing.cpu_count()
 
     print('Instanciate train and validation datasets')
-    train_files = list(config.dataset_folder.glob('train/images/*.tif'))
-    # shuffle list of training samples files
-    train_files = random.sample(train_files, len(train_files))
-    devset_size = len(train_files)
-    # validation set
-    if config.val_samples_csv is not None:
-        # read the validation samples
-        val_samples_s = pd.read_csv(config.val_samples_csv, squeeze=True)
-        val_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in val_samples_s]
-        train_files = [f for f in train_files if f not in set(val_files)]
-        valset_size = len(val_files)
-        trainset_size = len(train_files)
-        assert valset_size + trainset_size == devset_size
+    # tri pour que l'ordre (et donc le mélange avec la graine) soit reproductible
+    all_files = sorted(config.dataset_folder.glob('train/images/*.tif'))
+    files_by_id = {int(f.stem): f for f in all_files}
+    test_files = []
+
+    if config.train_image_path is not None:
+        # --- Découpage prédéfini train / val / test, lu depuis les CSV ---
+        assert config.val_image_path is not None, \
+            "val_image_path doit être renseigné quand train_image_path l'est"
+        split_ids = {
+            'train': _read_ids(config.train_image_path),
+            'val': _read_ids(config.val_image_path),
+            'test': _read_ids(config.test_image_path) if config.test_image_path is not None else [],
+        }
+        # une image ne doit jamais apparaître dans deux ensembles (fuite de données)
+        for (name_a, ids_a), (name_b, ids_b) in itertools.combinations(split_ids.items(), 2):
+            overlap = set(ids_a) & set(ids_b)
+            if overlap:
+                raise ValueError(f"{len(overlap)} image(s) à la fois dans {name_a} et {name_b}, "
+                                 f"ex. {sorted(overlap)[:10]}")
+        train_files = _ids_to_files(split_ids['train'], files_by_id, config.train_image_path)
+        val_files = _ids_to_files(split_ids['val'], files_by_id, config.val_image_path)
+        if config.test_image_path is not None:
+            test_files = _ids_to_files(split_ids['test'], files_by_id, config.test_image_path)
+        # mélange de la liste d'entraînement (reproductible grâce à la graine)
+        train_files = random.sample(train_files, len(train_files))
+        n_unused = len(files_by_id) - sum(len(ids) for ids in split_ids.values())
+        print(f"Split prédéfini : {len(train_files)} train, {len(val_files)} val, "
+              f"{len(test_files)} test ({n_unused} image(s) de train/images non utilisée(s))")
+    elif config.val_samples_csv is not None:
+        # --- Ancien mode : liste de validation fournie, tout le reste en entraînement ---
+        val_ids = set(_read_ids(config.val_samples_csv))
+        val_files = _ids_to_files(sorted(val_ids), files_by_id, config.val_samples_csv)
+        train_files = [f for f in all_files if int(f.stem) not in val_ids]
+        train_files = random.sample(train_files, len(train_files))
     else:
-        # generate a hold-out validation set from the training set
-        valset_size = int(len(train_files) * 0.1)
-        train_files, val_files = train_files[valset_size:], train_files[:valset_size]
-        trainset_size = len(train_files) - valset_size
+        # --- Ancien mode : validation tirée au hasard (10 % des images) ---
+        shuffled = random.sample(all_files, len(all_files))
+        n_val = int(len(shuffled) * 0.1)
+        train_files, val_files = shuffled[n_val:], shuffled[:n_val]
+
+    trainset_size = len(train_files)
+    valset_size = len(val_files)
 
     train_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, train_files)))\
         .map(parse_image, num_parallel_calls=N_CPUS)
@@ -126,9 +204,11 @@ if __name__ == '__main__':
     (xp_dir/'tensorboard').mkdir(parents=True)
     (xp_dir/'plots').mkdir()
     (xp_dir/'checkpoints').mkdir()
-    # save the validation samples to a CSV
-    val_samples_s = pd.Series([int(f.stem) for f in val_files], name='sample_id', dtype='uint32')
-    val_samples_s.to_csv(xp_dir/'val_samples.csv', index=False)
+    # sauvegarde des listes utilisées, pour pouvoir reproduire l'expérience
+    for split_name, split_files in (('train', train_files), ('val', val_files), ('test', test_files)):
+        if split_files:
+            pd.Series(sorted(int(f.stem) for f in split_files), name='sample_id', dtype='uint32')\
+                .to_csv(xp_dir/f'{split_name}_samples.csv', index=False)
 
     # keep a training minibatch for visualization
     for image, mask in train_dataset.take(1):
@@ -164,7 +244,7 @@ if __name__ == '__main__':
     print(model.summary())
 
     # get optimizer, loss, and compile model for training
-    optimizer = tf.keras.optimizers.Adam(lr=config.lr)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=config.lr)
 
     # compute class weights for the loss: inverse-frequency balanced
     # note: we set to 0 the weights for the classes "no_data"(0) and "clouds"(1) to ignore these
@@ -209,4 +289,18 @@ if __name__ == '__main__':
                               validation_data=val_dataset,
                               validation_steps=valset_size // config.batch_size
                               )
+
+    # Évaluation sur le test : désactivée par défaut, pour ne pas régler les
+    # hyperparamètres en regardant le test (activer avec evaluate_on_test: true)
+    if config.evaluate_on_test and test_files:
+        test_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, test_files)))\
+            .map(parse_image, num_parallel_calls=N_CPUS)\
+            .map(load_image_test, num_parallel_calls=N_CPUS)\
+            .batch(config.batch_size)\
+            .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+        print('Evaluate on the test set (poids de la dernière époque)')
+        test_metrics = model.evaluate(test_dataset, return_dict=True)
+        print(f"Test : {test_metrics}")
+        with open(xp_dir/'test_metrics.yaml', 'w') as f:
+            yaml.safe_dump({k: float(v) for k, v in test_metrics.items()}, f)
 

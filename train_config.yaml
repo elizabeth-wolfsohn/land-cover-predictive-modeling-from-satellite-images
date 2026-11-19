@@ -8,11 +8,11 @@
 seed: 42
 # the size of each batch of images when training
 # careful not to use a too large batch size, might lead to OOM errors
-batch_size: 8
+batch_size: 32
 # the number of epochs to train for
 epochs: 90
 # the learning rate
-lr: 0.0001
+lr: 0.001
 # the path to the root directory of the dataset
 dataset_folder: './challenge-ens/data/dataset_UNZIPPED'
 # the path to the root directory used to store experiments
@@ -22,6 +22,12 @@ xp_rootdir: './challenge-ens/code/experiments'
 # if null, a random train/val split is performed, with 10% of the samples held out for validation
 # the validation samples will be saved to a file 'val_samples.csv' in the experiment directory
 val_samples_csv: null
+
+
+train_image_path: 'local_dataset/csv_files/train_images.csv'
+val_image_path: 'local_dataset/csv_files/validation_images.csv'
+test_image_path: 'local_dataset/csv_files/test_images.csv'
+evaluate_on_test: false
 
 # =====================================================================================
 # OPTIONAL PREPROCESSING (framework/preprocessing/)
