@@ -59,7 +59,9 @@ def _parse_args():
     if config.val_samples_csv is not None:
         config.val_samples_csv = Path(config.val_samples_csv).expanduser()
         assert config.val_samples_csv.is_file()
-
+    config.validation_folder = Path(config.validation_folder).expanduser() if config.validation_folder else None
+    if config.validation_folder is not None:
+        assert config.validation_folder.is_dir()
     return config
 
 if __name__ == '__main__':
