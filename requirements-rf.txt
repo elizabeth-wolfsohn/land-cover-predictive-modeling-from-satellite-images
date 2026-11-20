@@ -6,3 +6,4 @@ PyYAML
 scikit-learn
 iterative-stratification
 matplotlib
+seaborn

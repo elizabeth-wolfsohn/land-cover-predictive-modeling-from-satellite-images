@@ -1,0 +1,11 @@
+pillow
+numpy<2
+matplotlib
+ipython
+pandas
+jupyter
+tifffile
+tqdm
+tensorflow[and-cuda]==2.20.0
+pyyaml
+seaborn

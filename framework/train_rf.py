@@ -49,9 +49,9 @@ def sample_pixels(image_path, n_per_image, rng):
 
     idx = np.concatenate(selected_idx)
 
-    feats = extract_features(img).reshape(
-        img.shape[0] * img.shape[1], -1
-    )[idx]
+    pixels = img.reshape(-1, img.shape[-1])[idx]
+ 
+    feats = extract_features(pixels[:, None, :]).reshape(len(idx), -1)
 
     return feats, flat[idx]
 
