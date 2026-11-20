@@ -110,7 +110,7 @@ def _parse_args():
     else:
         config.xp_dir = config.xp_rootdir/config.xp_name
     assert config.xp_dir.is_dir()
-    assert config.set in ('train', 'test', 'val')
+    assert config.set in ('train', 'test', 'val', 'final_test')
 
     return config
 
@@ -130,18 +130,18 @@ if __name__ == '__main__':
     N_CPUS = multiprocessing.cpu_count()
 
     print(f"Instanciate {config.set} dataset")
-    if config.set == 'test':
+    if config.set == 'final_test':
         test_files = sorted(config.dataset_folder.glob('test/images/*.tif'))
     else:
-        val_samples_s = pd.read_csv(config.xp_dir/'val_samples.csv')['sample_id']
-        val_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in val_samples_s]
-        if config.set == 'train':
-            test_files = [
-                f for f in sorted(config.dataset_folder.glob('train/images/*.tif'))
-                if f not in set(val_files)
-            ]
-        else:
-            test_files = val_files
+
+        samples_s = pd.read_csv(config.xp_dir/f'{config.set}_samples.csv')['sample_id']
+        L_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in samples_s]
+    
+        test_files = [
+            f for f in sorted(config.dataset_folder.glob('train/images/*.tif'))
+            if f in set(L_files)
+        ]
+
     testset_size = len(test_files)
 
     test_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, test_files)))
@@ -164,7 +164,7 @@ if __name__ == '__main__':
         .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
     # Load the trained model saved to disk
-    model = tf.keras.models.load_model(str(config.xp_dir/f'checkpoints/epoch{config.checkpoint_epoch}'))
+    model = tf.keras.models.load_model(str(config.xp_dir/f'checkpoints/epoch{config.checkpoint_epoch}'), compile=False)
     expected_channels = LCD.N_CHANNELS + (spectral.n_channels if spectral else 0)
     if model.input_shape[-1] != expected_channels:
         raise ValueError(f"the model expects {model.input_shape[-1]} input channels but the pipeline "

@@ -106,7 +106,6 @@ spectral_indices:
 # power: 0 = no re-balancing, 0.5 = inverse sqrt frequency, 1 = inverse frequency
 # with tiling re-sampling, prefer a lower power (e.g. 0.25) to avoid compensating twice
 class_weighting:
-  power: 0.5
-  max_weight: 10.0
-  # 'manifest': frequencies of the re-sampled training set (only with tiling), 'static': whole train set
-  counts_source: 'manifest'
+  mode: power        # uniform | benchmark | power
+  power: 0.5         
+  max_weight: 10.0  

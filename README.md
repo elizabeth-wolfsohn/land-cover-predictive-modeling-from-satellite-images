@@ -77,13 +77,13 @@ The input is a YAML configuration file. See `infer_config.yaml` for an example f
 
 The script `framework/eval.py` does the same thing as the evaluation done for submissions on the server. It computes the metric of the challenge (the Kullback-Leibler divergence) between a prediction CSV and a ground-truth CSV. Usage :
 ```
-ipython framework/eval.py -- --gt-file challenge-ens/data/dataset_csvs/train_labels.csv --pred-file challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_predicted.csv -o challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_score.csv
+ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv --pred-file challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_predicted.csv -o challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_score.csv
 ```
 Examples:
 * Evaluate on training set:
 
 ```
-ipython framework/eval.py -- --gt-file ../data/dataset_csvs/train_labels.csv --pred-file challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_train_predicted.csv --out-csv challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_train_score.csv
+ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv --pred-file challenge-ens/code/experiments/19-11-2026_17:41:48/epoch90_test_predicted.csv --out-csv challenge-ens/code/experiments/19-11-2026_17:41:48/epoch90_train_score.csv
 ```
 where ../data/dataset_csvs/train_labels.csv is where is stored the *y_train* file of the challenge.
 

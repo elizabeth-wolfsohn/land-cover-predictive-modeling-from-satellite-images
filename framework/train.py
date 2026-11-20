@@ -18,6 +18,44 @@ from framework.tensorflow_utils import plot_predictions
 from framework.utils import YamlNamespace
 
 
+def build_class_weights(counts, mode='power', power=0.5, max_weight=None, ignored_idx=(0, 1)):
+    """Poids par classe pour la perte, normalisés pour qu'un pixel pèse 1 en moyenne.
+ 
+    mode :
+      - 'uniform'   : poids 1 pour toutes les classes évaluées (aucun rééquilibrage)
+      - 'benchmark' : inverse de la fréquence, la formule voulue par le benchmark
+                      (équivaut à power=1 sans écrêtage)
+      - 'power'     : poids = fréquence ** (-power), puis écrêtage à max_weight
+                      (power=0.5 → inverse de la racine, power=1 → inverse)
+    Les classes de `ignored_idx` (no_data, clouds) reçoivent toujours un poids nul.
+    """
+    counts = np.asarray(counts, dtype=np.float64)
+    n_classes = len(counts)
+    valid = np.array([i not in set(ignored_idx) for i in range(n_classes)])
+ 
+    if mode == 'uniform':
+        p, max_weight = 0.0, None
+    elif mode == 'benchmark':
+        p, max_weight = 1.0, None
+    elif mode == 'power':
+        p = float(power)
+    else:
+        raise ValueError(f"class_weighting.mode inconnu : {mode!r} "
+                         "(attendu : 'uniform', 'benchmark' ou 'power')")
+ 
+    freq = counts[valid] / counts[valid].sum()
+    w_valid = np.zeros_like(freq)
+    present = freq > 0                       # une classe absente garde un poids nul
+    w_valid[present] = freq[present] ** (-p)
+    w_valid /= (w_valid * freq).sum()        # poids moyen par pixel = 1
+    if max_weight is not None:
+        w_valid = np.minimum(w_valid, float(max_weight))
+ 
+    weights = np.zeros(n_classes, dtype=np.float32)
+    weights[valid] = w_valid
+    return weights
+
+
 def kl_proportions(y_true, y_pred):
     true = tf.reduce_mean(tf.one_hot(tf.cast(tf.squeeze(y_true, -1), tf.int32), LCD.N_CLASSES), [1, 2])
     pred = tf.reduce_mean(y_pred, [1, 2])              
@@ -247,17 +285,14 @@ if __name__ == '__main__':
     optimizer = tf.keras.optimizers.Adam(learning_rate=config.lr)
 
     # compute class weights for the loss: inverse-frequency balanced
-    # note: we set to 0 the weights for the classes "no_data"(0) and "clouds"(1) to ignore these
-
-    # ---------------------------------------
-    # Add weighting directly on the dataset
-    counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
-    freq = counts / counts[2:].sum()
-    class_weight = np.zeros(LCD.N_CLASSES, dtype=np.float32)
-    class_weight[2:] = 1.0 / np.sqrt(freq[2:])          # sqrt-inverse : moins extrême
-    class_weight[2:] /= (class_weight[2:] * freq[2:]).sum()    # poids moyen par pixel = 1
-    class_weight = np.minimum(class_weight, 10.0)       # écrêtage
-    class_weight[LCD.IGNORED_CLASSES_IDX] = 0.          # ignore no_data et clouds
+    cw_cfg = _optional_config_value(config, 'class_weighting')
+    class_weight = build_class_weights(
+        LCD.TRAIN_CLASS_COUNTS,
+        mode=_optional_config_value(cw_cfg, 'mode', 'power'),
+        power=_optional_config_value(cw_cfg, 'power', 0.5),
+        max_weight=_optional_config_value(cw_cfg, 'max_weight', None),
+        ignored_idx=LCD.IGNORED_CLASSES_IDX,
+    )
     print(f"Will use class weights: {class_weight}")
     cw = tf.constant(class_weight)
 
