@@ -10,15 +10,13 @@ local_dataset/test
 local_dataset/train
 local_dataset/validation
 
-framework/train.py
-framework/infer.py
-infer_config.yaml
-train_config.yaml
-framework/tensorflow_utils.py
+
 
 .rfvenv/
 .segformervenv/
 dataset/
+
+
 
 
 
