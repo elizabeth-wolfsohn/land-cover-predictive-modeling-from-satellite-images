@@ -4,10 +4,8 @@ Classes and functions to handle data
 from pathlib import Path
 from collections import OrderedDict
 import numpy as np
-from tifffile import TiffFile
-
-import tensorflow as tf
-# import tensorflow_io as tfio
+import torch
+from tifffile import imread
 
 
 class LandCoverData():
@@ -65,67 +63,75 @@ class LandCoverData():
     # the minimum and maximum value of image pixels in the training set
     TRAIN_PIXELS_MIN = 1
     TRAIN_PIXELS_MAX = 24356
+    # the .tif files store the bands as B,G,R,NIR: reorder them as R,G,B,NIR when loading,
+    # to match the RGB order of ImageNet pretrained weights
+    CHANNEL_ORDER = [2, 1, 0, 3]
+    # per-channel (R,G,B,NIR) mean and std of image pixels (computed on 1000 random training images)
+    CHANNEL_MEAN = np.array([651.4, 695.4, 411.2, 3282.4], dtype='float32')
+    CHANNEL_STD = np.array([592.8, 427.0, 367.1, 1006.5], dtype='float32')
+    # SatlasPretrain inputs: L1C TCI / 255 for R,G,B (TCI saturates at 3558) and B08 / 8160
+    SATLAS_SCALE = np.array([3558., 3558., 3558., 8160.], dtype='float32')
 
 
-def numpy_parse_image(image_path):
-    """Load an image and its segmentation mask as numpy arrays and returning a tuple
-    Args:
-        image_path (bytes): path to image
-    Returns:
-        (numpy.array[uint16], numpy.array[uint8]): the image and mask arrays
+def input_normalization(config):
+    """(mean, std) used to normalize the images for the model of a train config."""
+    if config.model == 'swin' and config.backbone.startswith('satlas'):
+        # ponytail: no clipping to [0, 1] like Satlas, bright clouds/snow pixels go above 1
+        return np.zeros(4, dtype='float32'), LandCoverData.SATLAS_SCALE
+    return LandCoverData.CHANNEL_MEAN, LandCoverData.CHANNEL_STD
+
+
+class LandCoverDataset(torch.utils.data.Dataset):
+    """Images (and masks) from a list of `<root>/images/<id>.tif` files.
+    Returns (image[4,256,256] float32 normalized R,G,B,NIR, mask[256,256] int64) or the image only.
+    norm: (mean, std) of the normalization, per-channel standardization by default.
     """
-    image_path = Path(bytes.decode(image_path))
-    # get mask path from image path:
-    # image should be in a images/<image_id>.tif subfolder, while the mask is at masks/<image_id>.tif
-    mask_path = image_path.parent.parent/'masks'/image_path.name
-    with TiffFile(image_path) as tifi, TiffFile(mask_path) as tifm:
-        image = tifi.asarray()
-        mask = tifm.asarray()
-        # add channel dimension to mask: (256, 256, 1)
-        mask = mask[..., None]
-    return image, mask
+    def __init__(self, files, augment=False, with_mask=True,
+                 norm=(LandCoverData.CHANNEL_MEAN, LandCoverData.CHANNEL_STD)):
+        self.files, self.augment, self.with_mask = list(files), augment, with_mask
+        self.mean, self.std = norm
+
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+        image_path = Path(self.files[idx])
+        image = imread(image_path)[..., LandCoverData.CHANNEL_ORDER].astype('float32')
+        image = (image - self.mean) / self.std
+        image = image.transpose(2, 0, 1)  # (C, H, W)
+        if not self.with_mask:
+            return torch.from_numpy(np.ascontiguousarray(image))
+        # the mask is at masks/<image_id>.tif next to images/<image_id>.tif
+        mask = imread(image_path.parent.parent/'masks'/image_path.name).astype('int64')
+        if self.augment:
+            # random flips and 90 degrees rotations (the 8 dihedral transforms)
+            k = np.random.randint(4)
+            image, mask = np.rot90(image, k, (1, 2)), np.rot90(mask, k)
+            if np.random.rand() > 0.5:
+                image, mask = image[:, :, ::-1], mask[:, ::-1]
+        return torch.from_numpy(np.ascontiguousarray(image)), torch.from_numpy(np.ascontiguousarray(mask))
 
 
-@tf.function(input_signature=[tf.TensorSpec(None, tf.string)])
-def parse_image(image_path):
-    """Wraps the parse_image function as a TF function"""
-    image, mask = tf.numpy_function(numpy_parse_image, (image_path,), (tf.uint16, tf.uint8))
-    image.set_shape([LandCoverData.IMG_SIZE, LandCoverData.IMG_SIZE, LandCoverData.N_CHANNELS])
-    mask.set_shape([LandCoverData.IMG_SIZE, LandCoverData.IMG_SIZE, 1])
-    return image, mask
+def class_distribution(x, n_classes=LandCoverData.N_CLASSES):
+    """Per-image class distribution vectors.
+    Args:
+        x (torch.Tensor): masks (B, H, W) of class indices, or probabilities (B, C, H, W)
+    Returns:
+        (torch.Tensor): (B, n_classes) vectors summing to 1
+    """
+    if x.ndim == 4:
+        return x.float().mean((2, 3))
+    counts = torch.stack([torch.bincount(m.flatten(), minlength=n_classes) for m in x])
+    return counts.float() / counts.sum(1, keepdim=True)
 
 
-@tf.function
-def normalize(input_image, input_mask):
-    """Rescale the pixel values of the images between 0.0 and 1.0"""
-    image = tf.cast(input_image, tf.float32) / LandCoverData.TRAIN_PIXELS_MAX
-    return image, input_mask
-
-
-@tf.function
-def load_image_train(input_image, input_mask):
-    """Apply optional augmentations and normalize a train image and its label mask."""
-
-    image, mask = input_image, input_mask
-    if tf.random.uniform(()) > 0.5:
-        image = tf.image.flip_left_right(image)
-        mask = tf.image.flip_left_right(mask)
-    if tf.random.uniform(()) > 0.5:
-        image = tf.image.flip_up_down(image)
-        mask = tf.image.flip_up_down(mask)
-    if tf.random.uniform(()) > 0.5:
-        image = tf.image.rot90(image)
-        mask = tf.image.rot90(mask)
-    elif tf.random.uniform(()) > 0.5:
-        image = tf.image.rot90(image, k=3)
-        mask = tf.image.rot90(mask, k=3)
-
-    image, mask = normalize(image, mask)
-    return image, mask
-
-
-@tf.function
-def load_image_test(input_image, input_mask):
-    """Normalize test image and its label mask."""
-    image, mask = normalize(input_image, input_mask)
-    return image, mask
+def predict_distribution(logits, mode='argmax'):
+    """Image-level class distribution predicted from (B, C, H, W) logits.
+    The ignored classes ("no_data", "clouds") are never predicted.
+    mode: 'argmax' counts the most confident class of every pixel, 'soft' averages the probabilities.
+    """
+    logits = logits.float().clone()
+    logits[:, LandCoverData.IGNORED_CLASSES_IDX] = -torch.inf
+    if mode == 'soft':
+        return class_distribution(logits.softmax(1))
+    return class_distribution(logits.argmax(1), logits.shape[1])

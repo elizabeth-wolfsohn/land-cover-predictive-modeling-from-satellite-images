@@ -11,7 +11,7 @@ from framework.dataset import LandCoverData as LCD
 def epsilon_kl_divergence(y_true, y_pred):
     """
         The metric of the challenge, the Kullback-Leibler divergence between two discrete distributions.
-        Modification includes adding a small constant epsilon (1e-7) to y_true and y_pred
+        Modification includes adding a small constant epsilon (1e-8) to y_true and y_pred
     Args:
             y_true (numpy.array[float]): ground-truth
             y_pred (numpy.arra[float]): prediction
@@ -24,8 +24,8 @@ def epsilon_kl_divergence(y_true, y_pred):
     y_true /= y_true.sum(1, keepdims=True)
     y_pred /= y_pred.sum(1, keepdims=True)
     # add a small constant for smoothness around 0
-    y_true += 1e-7
-    y_pred += 1e-7
+    y_true += 1e-8
+    y_pred += 1e-8
     score = np.mean(np.sum(y_true * np.log(y_true / y_pred), 1))
     try:
         assert np.isfinite(score)
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     if not df_y_pred.shape == df_y_true.shape:
         raise ValueError(f"shapes not equal between y_true and y_pred")
 
-    if np.any(np.allclose(df_y_pred.sum(1), 0.)):
+    if np.isclose(df_y_pred.sum(axis=1), 0.).any():
         # if any row predicted sums to 0, raise an error
         raise ValueError("some row vector(s) in y_pred sum to 0")
 

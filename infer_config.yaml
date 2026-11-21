@@ -1,4 +1,3 @@
----
 #
 # YAML configuration file for infer.py
 #
@@ -8,16 +7,24 @@
 seed: 42
 # the size of each batch of images when performing prediction
 batch_size: 32
+# number of processes loading the data
+num_workers: 8
 # the path to the root folder of the dataset
-dataset_folder: '~/challenge-ens/data/dataset_UNZIPPED'
+dataset_folder: './dataset_UNZIPPED'
 # the path to the root directory used to store experiments
-xp_rootdir: '~/challenge-ens/code/experiments'
+xp_rootdir: './code/experiments'
 # the name of log directory for an experiment (result of training)
 # you can set to 'last' to refer to the lastly created directory under in <xp_rootdir>
-xp_name: '25-11-2020_20:40:43'
-# the set to perform inference on: 'train', 'test' or 'val'
-# note: 'train' mean all train samples with the ones in validation excluded, and 'val' mean the ones in validation
-set: 'test'
-# the output prediction for the set will be saved to a file 'epoch<checkpoint_epoch>_<set>_predicted.csv' in the experiment directory
-# the epoch number for the model checkpoint to load and perform prediction with
-checkpoint_epoch: 84
+xp_name: 'last'
+# the set to perform inference on:
+#   'final_test': the official test set of the challenge (dataset_UNZIPPED/test), the CSV to submit
+#   'train', 'val', 'test': the group's internal split, read from <set>_samples.csv in the experiment
+#   (ground truth in local_dataset/csv_files/*_labels.csv, also saved to '<set>_true.csv')
+set: 'final_test'
+# the model checkpoint to use: 'best' (best validation KL) or 'last'
+checkpoint: 'best'
+# 'argmax' (count the most confident class of each pixel) or 'soft' (average the probabilities)
+pred_mode: 'soft'
+# test-time augmentation: 'none', 'flip' (2 passes) or 'd4' (the 8 rotations / flips, 8 passes)
+tta: 'none'
+# the output prediction will be saved to '<checkpoint>_<pred_mode>[_tta-<tta>]_<set>_predicted.csv' in the experiment directory

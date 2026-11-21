@@ -140,3 +140,12 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+# data, experiments and local work files
+dataset_UNZIPPED/
+code/
+12-11-2026_13_51_06/
+NewVersion/
+swin-transformers-tf-main/
+code.zip
+curves.png
+*.pt
