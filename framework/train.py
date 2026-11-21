@@ -78,19 +78,19 @@ if __name__ == '__main__':
 
     N_CPUS = multiprocessing.cpu_count()
 
-    # --- class weights (10 values), 0 for "no_data"(0) and "clouds"(1) ---
-    counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
-    valid = [c for c in range(LCD.N_CLASSES) if c not in LCD.IGNORED_CLASSES_IDX]
-    class_weight = np.zeros(LCD.N_CLASSES, dtype=np.float32)
-    class_weight[valid] = counts[valid].sum() / (counts[valid] * len(valid))
-    class_weight = np.minimum(class_weight, 10.)   # cap the huge weight of "snow"
-    print(f"Will use class weights: {class_weight}")
-    class_weight_tf = tf.constant(class_weight, dtype=tf.float32)
+    # # --- class weights (10 values), 0 for "no_data"(0) and "clouds"(1) ---
+    # counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
+    # valid = [c for c in range(LCD.N_CLASSES) if c not in LCD.IGNORED_CLASSES_IDX]
+    # class_weight = np.zeros(LCD.N_CLASSES, dtype=np.float32)
+    # class_weight[valid] = counts[valid].sum() / (counts[valid] * len(valid))
+    # #class_weight = np.minimum(class_weight, 10.)   # cap the huge weight of "snow"
+    # print(f"Will use class weights: {class_weight}")
+    # class_weight_tf = tf.constant(class_weight, dtype=tf.float32)
 
-    def add_sample_weights(image, mask):
-        # per-pixel weight depending on the class -> shape (256, 256)
-        weights = tf.gather(class_weight_tf, tf.cast(tf.squeeze(mask, axis=-1), tf.int32))
-        return image, mask, weights
+    # def add_sample_weights(image, mask):
+    #     # per-pixel weight depending on the class -> shape (256, 256)
+    #     weights = tf.gather(class_weight_tf, tf.cast(tf.squeeze(mask, axis=-1), tf.int32))
+    #     return image, mask, weights
 
     print('Instanciate train and validation datasets')
     train_files = list(config.dataset_folder.glob('train/images/*.tif'))
@@ -118,7 +118,6 @@ if __name__ == '__main__':
         .map(parse_image, num_parallel_calls=N_CPUS)
 
     train_dataset = train_dataset.map(load_image_train, num_parallel_calls=N_CPUS)\
-        .map(add_sample_weights, num_parallel_calls=N_CPUS)\
         .shuffle(buffer_size=1024, seed=config.seed)\
         .repeat()\
         .batch(config.batch_size)\
@@ -139,7 +138,7 @@ if __name__ == '__main__':
     val_samples_s.to_csv(xp_dir/'val_samples.csv', index=False)
 
     # keep a training minibatch for visualization
-    for image, mask, _ in train_dataset.take(1):
+    for image, mask in train_dataset.take(1):
         sample_batch = (image[:5, ...], mask[:5, ...])
 
     callbacks = [
@@ -174,16 +173,27 @@ if __name__ == '__main__':
     # get optimizer, loss, and compile model for training
     optimizer = tf.keras.optimizers.Adam(lr=config.lr)
 
+
+    # compute class weights for the loss: inverse-frequency balanced
+    # note: we set to 0 the weights for the classes "no_data"(0) and "clouds"(1) to ignore these
+    class_weight = (1 / LCD.TRAIN_CLASS_COUNTS[2:])* LCD.TRAIN_CLASS_COUNTS[2:].sum() / (LCD.N_CLASSES-2)
+    class_weight[LCD.IGNORED_CLASSES_IDX] = 0.
+    print(f"Will use class weights: {class_weight}")
+
     loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
     print("Compile model")
     model.compile(optimizer=optimizer,
                   loss=loss,
                   metrics=[])
+                  # metrics = [tf.keras.metrics.Precision(),
+                #            tf.keras.metrics.Recall(),
+                #            tf.keras.metrics.MeanIoU(num_classes=LCD.N_CLASSES)]) # TODO segmentation metrics
 
     # Launch training
     model_history = model.fit(train_dataset, epochs=config.epochs,
                               callbacks=callbacks,
                               steps_per_epoch=trainset_size // config.batch_size,
                               validation_data=val_dataset,
-                              validation_steps=valset_size // config.batch_size
+                              validation_steps=valset_size // config.batch_size,
+                              class_weight=class_weight
                               )
