@@ -293,7 +293,6 @@ if __name__ == '__main__':
         max_weight=_optional_config_value(cw_cfg, 'max_weight', None),
         ignored_idx=LCD.IGNORED_CLASSES_IDX,
     )
-    print(f"Will use class weights: {class_weight}")
     cw = tf.constant(class_weight)
 
     def add_sample_weights(image, mask):
