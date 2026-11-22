@@ -62,16 +62,6 @@ class PlotCallback(tf.keras.callbacks.Callback):
         )
 
 
-def _optional_config_value(config, key, default=None):
-    """Return a configuration value, or default if it is absent."""
-
-    try:
-        value = getattr(config, key)
-    except (AttributeError, KeyError):
-        return default
-
-    return default if value is None else value
-
 
 def _parse_args():
 
@@ -87,52 +77,35 @@ def _parse_args():
     cli_args = parser.parse_args()
 
     with open(cli_args.config, 'r') as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
+        config = yaml.safe_load(f)
 
     config = YamlNamespace(config)
 
     config.xp_rootdir = Path(config.xp_rootdir).expanduser()
-    assert config.xp_rootdir.is_dir()
+    assert config.xp_rootdir.is_dir(), f"xp_rootdir introuvable: {config.xp_rootdir}"
 
     config.dataset_folder = Path(config.dataset_folder).expanduser()
-    assert config.dataset_folder.is_dir()
+    assert config.dataset_folder.is_dir(), f"dataset_folder introuvable: {config.dataset_folder}"
 
-    # Optional validation CSV
-    val_samples_csv = _optional_config_value(
-        config, 'val_samples_csv'
-    )
-
-    config.val_samples_csv = (
-        Path(val_samples_csv).expanduser()
-        if val_samples_csv is not None else None
-    )
-
-    if config.val_samples_csv is not None:
-        assert config.val_samples_csv.is_file()
-
-    # Optional validation folder
-    validation_folder = _optional_config_value(
-        config, 'validation_folder'
-    )
-
-    config.validation_folder = (
-        Path(validation_folder).expanduser()
-        if validation_folder is not None else None
-    )
-
-    if config.validation_folder is not None:
-        assert config.validation_folder.is_dir()
-
-    # The two validation methods cannot be used simultaneously
-    if (
-        config.val_samples_csv is not None
-        and config.validation_folder is not None
-    ):
-        raise ValueError(
-            "Choose either val_samples_csv or validation_folder, not both."
+    # Validation externe (facultative)
+    validation_folder = getattr(config, 'validation_folder', None)
+    if validation_folder is not None:
+        config.validation_folder = Path(validation_folder).expanduser()
+        assert config.validation_folder.is_dir(), (
+            f"validation_folder introuvable: {config.validation_folder}"
         )
+    else:
+        config.validation_folder = None
 
-    config.seed = _optional_config_value(config, 'seed', None)
+    # CSV de validation (facultatif)
+    val_samples_csv = getattr(config, 'val_samples_csv', None)
+    if val_samples_csv is not None:
+        config.val_samples_csv = Path(val_samples_csv).expanduser()
+        assert config.val_samples_csv.is_file(), (
+            f"val_samples_csv introuvable: {config.val_samples_csv}"
+        )
+    else:
+        config.val_samples_csv = None
 
     return config
 
@@ -154,49 +127,55 @@ if __name__ == '__main__':
     N_CPUS = multiprocessing.cpu_count()
 
     # ---------------------------------------------------------
-    # Class weights (same formula as the reference U-Net)
+    # Class weights 
     # ---------------------------------------------------------
 
-    counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
+    # counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
 
-    valid = [
-        c for c in range(LCD.N_CLASSES)
-        if c not in LCD.IGNORED_CLASSES_IDX
-    ]
+    # valid = [
+    #     c for c in range(LCD.N_CLASSES)
+    #     if c not in LCD.IGNORED_CLASSES_IDX
+    # ]
 
-    if len(valid) == 0 or np.any(counts[valid] <= 0):
-        raise ValueError(
-            "Invalid class counts: check LCD.TRAIN_CLASS_COUNTS."
-        )
-
-   # class_weight = np.zeros(LCD.N_CLASSES, dtype=np.float32)
-
-    # class_weight[valid] = (
-    #     counts[valid].sum()
-    #     / (counts[valid] * len(valid))
-    # )
-
-    # class_weight = np.minimum(class_weight, 10.)
-     # compute class weights for the loss: inverse-frequency balanced
-    # note: we set to 0 the weights for the classes "no_data"(0) and "clouds"(1) to ignore these
-    class_weight = (1 / LCD.TRAIN_CLASS_COUNTS[2:])* LCD.TRAIN_CLASS_COUNTS[2:].sum() / (LCD.N_CLASSES-2)
-    class_weight[LCD.IGNORED_CLASSES_IDX] = 0.
-
-    print(f"Will use class weights: {class_weight}")
-
-    # class_weight_tf = tf.constant(
-    #     class_weight,
-    #     dtype=tf.float32
-    # )
-
-    # def add_sample_weights(image, mask):
-    #     # Per-pixel weight depending on the class
-    #     weights = tf.gather(
-    #         class_weight_tf,
-    #         tf.cast(tf.squeeze(mask, axis=-1), tf.int32)
+    # if len(valid) == 0 or np.any(counts[valid] <= 0):
+    #     raise ValueError(
+    #         "Invalid class counts: check LCD.TRAIN_CLASS_COUNTS."
     #     )
 
-    #     return image, mask, weights
+   
+    # # class_weight = np.minimum(class_weight, 10.)
+    #  # compute class weights for the loss: inverse-frequency balanced
+    # # note: we set to 0 the weights for the classes "no_data"(0) and "clouds"(1) to ignore these
+    # counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
+    # class_weight = np.zeros(LCD.N_CLASSES)
+    # class_weight[valid] = np.sqrt(counts[valid].sum() / (counts[valid] * len(valid)))
+    # class_weight = np.minimum(class_weight, 10.)
+    # class_weight = {i: float(w) for i, w in enumerate(class_weight)}
+
+    # print(f"Will use class weights: {class_weight}")
+
+
+
+
+    # Poids de classes pour la loss : fréquence racine inverse (power=0.5),
+    # normalisée pour que le poids moyen d'un pixel valide vaille 1, plafonnée à 10.
+    # Les classes ignorées ("no_data" (0), "clouds" (1)) et les classes sans pixel ont un poids de 0.
+    counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
+    valid = [c for c in range(LCD.N_CLASSES)
+            if c not in LCD.IGNORED_CLASSES_IDX and counts[c] > 0]
+    if len(valid) == 0:
+        raise ValueError("Invalid class counts: check LCD.TRAIN_CLASS_COUNTS.")
+
+    freq = counts[valid] / counts[valid].sum()          # fréquences sur les classes valides
+    class_weight = np.zeros(LCD.N_CLASSES)
+    class_weight[valid] = freq ** -0.5                   # fréquence racine inverse
+    class_weight[valid] /= (class_weight[valid] * freq).sum()   # poids moyen d'un pixel = 1
+    class_weight = np.minimum(class_weight, 10.)
+    class_weight = class_weight.astype(np.float32)
+
+    class_weight = {i: float(w) for i, w in enumerate(class_weight)}
+    print(f"Will use class weights: {class_weight}")
+
 
     # ---------------------------------------------------------
     # Training and validation datasets
@@ -409,11 +388,24 @@ if __name__ == '__main__':
             update_freq='epoch'
         ),
 
+
+            
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(xp_dir / 'checkpoints' / 'epoch{epoch}'),
+            filepath=str(xp_dir / 'checkpoints' / 'epoch{epoch:02d}.keras'),
             save_best_only=False,
-            verbose=1
+            verbose=0
         ),
+
+
+        tf.keras.callbacks.ModelCheckpoint(
+        filepath=str(xp_dir / 'checkpoints' / 'best_model.keras'),
+        monitor='val_loss',
+        mode='min',
+        save_best_only=True,
+        verbose=1
+        ),
+
+     
 
         tf.keras.callbacks.CSVLogger(
             filename=xp_dir / 'fit_logs.csv'
@@ -424,6 +416,7 @@ if __name__ == '__main__':
             factor=0.5,
             verbose=1
         )
+    
     ]
 
     # ---------------------------------------------------------
@@ -469,8 +462,9 @@ if __name__ == '__main__':
         # metrics = [tf.keras.metrics.Precision(),
         #            tf.keras.metrics.Recall(),
         #            tf.keras.metrics.MeanIoU(num_classes=LCD.N_CLASSES)]) # TODO segmentation metrics
-        
     )
+        
+    
 
     # ---------------------------------------------------------
     # Launch training

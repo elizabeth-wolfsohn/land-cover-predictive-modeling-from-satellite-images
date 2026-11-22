@@ -128,18 +128,31 @@ def build_confusion_matrix(gt_mask_dir, pred_mask_dir):
         where=(precision + recall) != 0
     )
 
+    iou = np.divide(
+        tp,
+        total_true + total_pred - tp,
+        out=np.zeros(len(class_ids), dtype=float),
+        where=(total_true + total_pred - tp) != 0
+    )
+
     # Final table
     df_cm = pd.DataFrame(
         cm,
         index=LCD.CLASSES,
         columns=LCD.CLASSES
     )
+    # Remove the first two class columns
+    df_cm = df_cm.iloc[2:, :]
 
-    df_cm.index.name = "Classe réelle"
+    df_cm.index.name = "Ground Truth Class"
 
-    df_cm["Producer's Accuracy (%)"] = recall * 100
-    df_cm["User's Accuracy (%)"] = precision * 100
-    df_cm["F1-score (%)"] = f1 * 100
+        # Add metrics for the remaining classes
+    df_cm["Recall (%)"] = recall[2:] * 100
+    df_cm["Precision (%)"] = precision[2:] * 100
+    df_cm["F1-score (%)"] = f1[2:] * 100
+    df_cm["IoU (%)"] = iou[2:] * 100
+
+
 
     return df_cm
 
@@ -171,7 +184,12 @@ if __name__ == "__main__":
     if set_name not in ("train", "val", "test"):
         raise ValueError("set must be train, val or test.")
     
-    prediction_file_name = f"rf_{set_name}_predicted.csv"
+
+    ckpt = str(cfg["checkpoint_epoch"])          # 'best' ou un entier
+    tag = "best" if ckpt == "best" else f"epoch{int(ckpt)}"
+    prediction_file_name = f"{tag}_{set_name}_predicted.csv"
+    
+
 
     # Resolve experiment directory
     if cfg['xp_name'] == 'last':
@@ -203,12 +221,15 @@ if __name__ == "__main__":
     )
 
     pred_file = xp_dir / prediction_file_name
+    pred_mask_dir = xp_dir / f"{tag}_{set_name}_pred_masks"
+
+    gt_mask_dir =dataset_folder/ dataset_set/"masks"
 
     #gt_mask_dir = dataset_folder / dataset_set / "masks"
     #pred_mask_dir = xp_dir / f"{set_name}_predicted_masks"
 
-    out_csv = xp_dir / f"eval_{set_name}_results.csv"
-    #confusion_out = xp_dir / "confusion_matrix.csv"
+    out_csv = xp_dir / f"eval_{tag}_{set_name}_results.csv"
+    confusion_out = xp_dir / f"confusion_{tag}_{set_name}.csv"
 
     # Check input files and directories
     if not gt_file.is_file():
@@ -217,11 +238,11 @@ if __name__ == "__main__":
     if not pred_file.is_file():
         raise FileNotFoundError(pred_file)
 
-    # if not gt_mask_dir.is_dir():
-    #     raise FileNotFoundError(gt_mask_dir)
+    if not gt_mask_dir.is_dir():
+        raise FileNotFoundError(gt_mask_dir)
 
-    # if not pred_mask_dir.is_dir():
-    #     raise FileNotFoundError(pred_mask_dir)
+    if not pred_mask_dir.is_dir():
+        raise FileNotFoundError(pred_mask_dir)
 
     # --------------------------------------------------
     # 1. KL divergence
@@ -261,6 +282,9 @@ if __name__ == "__main__":
         df_y_pred.to_numpy()
     )
 
+
+    
+
     print(f"KL divergence: {score}")
 
     df_score = pd.DataFrame([{
@@ -274,16 +298,13 @@ if __name__ == "__main__":
     # --------------------------------------------------
     # 2. Pixel-wise confusion matrix
     # --------------------------------------------------
+    df_cm=build_confusion_matrix(gt_mask_dir=gt_mask_dir,  pred_mask_dir=pred_mask_dir)
+ 
 
-    # df_cm = build_confusion_matrix(
-    #     gt_mask_dir,
-    #     pred_mask_dir
-    # )
-
-    # print("\nPixel-wise confusion matrix:")
-    # print(df_cm)
-
-    # df_cm.to_csv(confusion_out)
+    print("\nPixel-wise confusion matrix:")
+    print(df_cm)
+    print(f"\nPixel-wise results saved to: {confusion_out}")
+    df_cm.to_csv(confusion_out)
 
     print(f"\nKL results saved to: {out_csv}")
-    # print(f"Confusion matrix saved to: {confusion_out}")
+

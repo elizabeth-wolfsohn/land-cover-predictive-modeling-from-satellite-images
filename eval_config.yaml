@@ -3,7 +3,9 @@ dataset_folder: local_dataset
 
 # Experiment
 xp_rootdir: experiments
-xp_name: last
+xp_name: 22-11-2026_13-07-14
 
 # Evaluation dataset
-set: val # train, val ou test
+set: test # train, val ou test
+
+checkpoint_epoch: 'best'

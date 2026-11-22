@@ -3,9 +3,10 @@ Predict the targets using a trained model.
 """
 from pathlib import Path
 import argparse
+import math
 import yaml
 import random
-from tifffile import TiffFile
+from tifffile import TiffFile, imwrite
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -13,6 +14,7 @@ import tensorflow as tf
 
 from framework.dataset import LandCoverData as LCD
 from framework.utils import YamlNamespace
+
 
 def numpy_parse_image(image_path):
     """Load an image as numpy array
@@ -46,14 +48,16 @@ def load_image_test(input_image):
     return image
 
 
-def predict_as_vectors(model, dataset, steps=None):
-    """Perform a forward pass over the dataset and bincount the prediction masks to return class vectors.
+def predict_as_vectors(model, dataset, files, pred_mask_dir, steps=None):
+    """Forward pass over the dataset: saves the predicted masks and returns class proportions.
     Args:
         model (tf.keras.Model): model
-        dataset (tf.data.Dataset): dataset to perform inference on
-        steps (int, optional): the total number of steps (batches) in the dataset, used for the progress bar
+        dataset (tf.data.Dataset): dataset to perform inference on (not shuffled)
+        files (list[Path]): image files, in the same order as the dataset
+        pred_mask_dir (Path): directory where predicted masks are saved as <stem>.tif
+        steps (int, optional): total number of batches, used for the progress bar
     Returns:
-        (pandas.DataFrame): predicted class distribution vectors for the dataset
+        (numpy.ndarray): predicted class distribution vectors for the dataset
     """
     def bincount_along_axis(arr, minlength=None, axis=-1):
         """Bincounts a tensor along an axis"""
@@ -62,13 +66,23 @@ def predict_as_vectors(model, dataset, steps=None):
         mask = tf.equal(arr[..., None], tf.range(minlength, dtype=arr.dtype))
         return tf.math.count_nonzero(mask, axis=axis-1 if axis < 0 else axis)
 
+    print(f"Saving prediction masks to directory {pred_mask_dir}")
+
     predictions = []
+    idx = 0  # position in the list of files
     for batch in tqdm(dataset, total=steps):
         # predict a raster for each sample in the batch
         pred_raster = model.predict_on_batch(batch)
 
         (batch_size, _, _, num_classes) = tuple(pred_raster.shape)
-        pred_mask = tf.argmax(pred_raster, -1) # (bs, 256, 256)
+        pred_mask = tf.argmax(pred_raster, -1)  # (bs, 256, 256)
+
+        # save the predicted masks, named like the input images
+        masks_np = pred_mask.numpy().astype(np.uint8)
+        for m, f in zip(masks_np, files[idx:idx + batch_size]):
+            imwrite(pred_mask_dir / f"{f.stem}.tif", m)
+        idx += batch_size
+
         # bincount for each sample
         counts = bincount_along_axis(
             tf.reshape(pred_mask, (batch_size, -1)), minlength=num_classes, axis=-1
@@ -93,10 +107,13 @@ def _parse_args():
     config.xp_rootdir = Path(config.xp_rootdir).expanduser()
     assert config.xp_rootdir.is_dir()
     if config.xp_name == 'last':
-        # get last xp directory name
-        config.xp_dir = Path(max(str(d) for d in config.xp_rootdir.iterdir() if d.is_dir()))
+        # most recently modified xp directory
+        config.xp_dir = max(
+            (d for d in config.xp_rootdir.iterdir() if d.is_dir()),
+            key=lambda d: d.stat().st_mtime
+        )
     else:
-        config.xp_dir = config.xp_rootdir/config.xp_name
+        config.xp_dir = config.xp_rootdir / config.xp_name
     assert config.xp_dir.is_dir()
     assert config.set in ('train', 'test', 'val')
 
@@ -119,21 +136,17 @@ if __name__ == '__main__':
 
     print(f"Instanciate {config.set} dataset")
 
-
     if config.set == 'test':
         test_files = sorted(config.dataset_folder.glob('test/images/*.tif'))
     elif config.set == 'val':
-        # même dossier que celui utilisé à l'entraînement
-        test_files = sorted((config.dataset_folder/'validation/images').glob('*.tif'))
+        # same folder as the one used during training
+        test_files = sorted((config.dataset_folder / 'validation/images').glob('*.tif'))
     else:  # 'train'
         test_files = sorted(config.dataset_folder.glob('train/images/*.tif'))
-    
+
     testset_size = len(test_files)
 
     test_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, test_files)))
-    # assert that samples are loaded in the right order (not shuffled)
-    # for idx, (f, tensor) in enumerate(zip(test_files, test_dataset)):
-    #     assert f == str(bytes.decode(tensor.numpy()))
 
     test_dataset = test_dataset.map(parse_image, num_parallel_calls=N_CPUS)\
         .map(load_image_test, num_parallel_calls=N_CPUS)\
@@ -141,17 +154,34 @@ if __name__ == '__main__':
         .batch(config.batch_size)\
         .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
-    # Load the trained model saved to disk
-    model = tf.keras.models.load_model(str(config.xp_dir/f'checkpoints/epoch{config.checkpoint_epoch}'))
+    # checkpoint: 'best' or an epoch number
+    if str(config.checkpoint_epoch) == 'best':
+        tag = 'best'
+        checkpoint_path = config.xp_dir / 'checkpoints' / 'best_model.keras'
+    else:
+        tag = f'epoch{int(config.checkpoint_epoch)}'
+        checkpoint_path = config.xp_dir / 'checkpoints' / f'epoch{int(config.checkpoint_epoch):02d}.keras'
+
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(f"Checkpoint not found: {checkpoint_path}")
+
+    model = tf.keras.models.load_model(str(checkpoint_path), compile=False)
+    print(f"Successfully loaded model: {checkpoint_path}")
+
+    pred_mask_dir = config.xp_dir / f'{tag}_{config.set}_pred_masks'
+    pred_mask_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Predict the vectors over the {config.set} dataset")
-    y_pred = predict_as_vectors(model, test_dataset, steps=testset_size // config.batch_size)
+    y_pred = predict_as_vectors(
+        model, test_dataset,
+        files=test_files,
+        pred_mask_dir=pred_mask_dir,
+        steps=math.ceil(testset_size / config.batch_size),
+    )
 
     # get the samples ids
     ids_s = pd.Series([int(f.stem) for f in test_files], name='sample_id', dtype='uint32')
-    df_y_pred = pd.DataFrame(
-        y_pred, index=ids_s, columns=LCD.CLASSES
-    )
-    out_csv = config.xp_dir/f'epoch{config.checkpoint_epoch}_{config.set}_predicted.csv'
-    print(f"Saving prediction CSV to file {str(out_csv)}")
+    df_y_pred = pd.DataFrame(y_pred, index=ids_s, columns=LCD.CLASSES)
+    out_csv = config.xp_dir / f'{tag}_{config.set}_predicted.csv'
+    print(f"Saving prediction CSV to file {out_csv}")
     df_y_pred.to_csv(out_csv, index=True, index_label='sample_id')
