@@ -1,0 +1,29 @@
+[project]
+name = "land-cover-segmentation"
+version = "0.1.0"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "torch>=2.7",
+    "torchvision",
+    "timm>=1.0",
+    "huggingface-hub",
+    "numpy",
+    "pandas",
+    "tifffile",
+    "pyyaml",
+    "tqdm",
+    "matplotlib",
+]
+
+[tool.uv]
+package = false
+
+# cu128 wheels ship RTX 50xx (sm_120) kernels and also run on CPU; Windows PyPI torch is CPU-only
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]
+torchvision = [{ index = "pytorch-cu128", marker = "sys_platform != 'darwin'" }]
