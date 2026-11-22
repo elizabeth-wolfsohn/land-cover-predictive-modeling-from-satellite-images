@@ -9,15 +9,20 @@ seed: 42
 # the size of each batch of images when performing prediction
 batch_size: 32
 # the path to the root folder of the dataset
-dataset_folder: '~/challenge-ens/data/dataset_UNZIPPED'
+dataset_folder: '../additional_files_earthcube_emu4zqr/dataset'
 # the path to the root directory used to store experiments
-xp_rootdir: '~/challenge-ens/code/experiments'
+xp_rootdir: 'experiments'
 # the name of log directory for an experiment (result of training)
 # you can set to 'last' to refer to the lastly created directory under in <xp_rootdir>
-xp_name: '25-11-2020_20:40:43'
+xp_name: 'last'
 # the set to perform inference on: 'train', 'test' or 'val'
 # note: 'train' mean all train samples with the ones in validation excluded, and 'val' mean the ones in validation
 set: 'test'
 # the output prediction for the set will be saved to a file 'epoch<checkpoint_epoch>_<set>_predicted.csv' in the experiment directory
 # the epoch number for the model checkpoint to load and perform prediction with
 checkpoint_epoch: 84
+
+# how to turn the predicted pixel probabilities into a class distribution vector:
+#   - argmax : count the most confident class of every pixel (benchmark)
+#   - soft   : average the predicted probabilities over all pixels (often better for the KL metric)
+aggregation: argmax

@@ -1,7 +1,13 @@
 """
 Predict the targets using a trained model.
 """
+import sys
 from pathlib import Path
+# make the "framework" package importable whatever the way the script is launched
+# (VS Code "Run Python File", `python framework/train.py`, or `python -m framework.train`)
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 import argparse
 import yaml
 import random
@@ -46,12 +52,14 @@ def load_image_test(input_image):
     return image
 
 
-def predict_as_vectors(model, dataset, steps=None):
+def predict_as_vectors(model, dataset, steps=None, aggregation='argmax'):
     """Perform a forward pass over the dataset and bincount the prediction masks to return class vectors.
     Args:
         model (tf.keras.Model): model
         dataset (tf.data.Dataset): dataset to perform inference on
         steps (int, optional): the total number of steps (batches) in the dataset, used for the progress bar
+        aggregation (str): 'argmax' counts the most confident class of every pixel (benchmark);
+            'soft' averages the predicted probabilities over the pixels
     Returns:
         (pandas.DataFrame): predicted class distribution vectors for the dataset
     """
@@ -66,6 +74,9 @@ def predict_as_vectors(model, dataset, steps=None):
     for batch in tqdm(dataset, total=steps):
         # predict a raster for each sample in the batch
         pred_raster = model.predict_on_batch(batch)
+        if aggregation == 'soft':
+            predictions.append(tf.reduce_mean(tf.cast(pred_raster, tf.float64), axis=(1, 2)))
+            continue
 
         (batch_size, _, _, num_classes) = tuple(pred_raster.shape)
         pred_mask = tf.argmax(pred_raster, -1) # (bs, 256, 256)
@@ -81,24 +92,29 @@ def predict_as_vectors(model, dataset, steps=None):
 
 def _parse_args():
     parser = argparse.ArgumentParser('Inference script')
-    parser.add_argument('--config', '-c', type=str, required=True, help="The YAML config file")
+    parser.add_argument('--config', '-c', type=str, default=str(ROOT_DIR/'infer_config.yaml'),
+                        help="The YAML config file (default: infer_config.yaml at the repo root)")
 
     cli_args = parser.parse_args()
     # parse the config file
     with open(cli_args.config, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     config = YamlNamespace(config)
-    config.dataset_folder = Path(config.dataset_folder).expanduser()
-    assert config.dataset_folder.is_dir()
-    config.xp_rootdir = Path(config.xp_rootdir).expanduser()
-    assert config.xp_rootdir.is_dir()
+    config.dataset_folder = (ROOT_DIR/Path(config.dataset_folder).expanduser()).resolve()
+    assert config.dataset_folder.is_dir(), f"dataset_folder not found: {config.dataset_folder}"
+    config.xp_rootdir = (ROOT_DIR/Path(config.xp_rootdir).expanduser()).resolve()
+    assert config.xp_rootdir.is_dir(), f"xp_rootdir not found: {config.xp_rootdir}"
     if config.xp_name == 'last':
-        # get last xp directory name
-        config.xp_dir = Path(max(str(d) for d in config.xp_rootdir.iterdir() if d.is_dir()))
+        # get the most recently created experiment directory
+        config.xp_dir = max((d for d in config.xp_rootdir.iterdir() if d.is_dir()),
+                            key=lambda d: d.stat().st_mtime)
     else:
         config.xp_dir = config.xp_rootdir/config.xp_name
     assert config.xp_dir.is_dir()
     assert config.set in ('train', 'test', 'val')
+    if not hasattr(config, 'aggregation'):
+        config.aggregation = 'argmax'
+    assert config.aggregation in ('argmax', 'soft')
 
     return config
 
@@ -121,7 +137,7 @@ if __name__ == '__main__':
     if config.set == 'test':
         test_files = sorted(config.dataset_folder.glob('test/images/*.tif'))
     else:
-        val_samples_s = pd.read_csv(config.xp_dir/'val_samples.csv', squeeze=True)
+        val_samples_s = pd.read_csv(config.xp_dir/'val_samples.csv').squeeze('columns')
         val_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in val_samples_s]
         if config.set == 'train':
             test_files = [
@@ -144,16 +160,19 @@ if __name__ == '__main__':
         .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
 
     # Load the trained model saved to disk
-    model = tf.keras.models.load_model(str(config.xp_dir/f'checkpoints/epoch{config.checkpoint_epoch}'))
+    model = tf.keras.models.load_model(
+        str(config.xp_dir/f'checkpoints/epoch{config.checkpoint_epoch}'), compile=False
+    )
 
     print(f"Predict the vectors over the {config.set} dataset")
-    y_pred = predict_as_vectors(model, test_dataset, steps=testset_size // config.batch_size)
+    y_pred = predict_as_vectors(model, test_dataset, steps=-(-testset_size // config.batch_size),
+                                aggregation=config.aggregation)
 
     # get the samples ids
     ids_s = pd.Series([int(f.stem) for f in test_files], name='sample_id', dtype='uint32')
     df_y_pred = pd.DataFrame(
         y_pred, index=ids_s, columns=LCD.CLASSES
     )
-    out_csv = config.xp_dir/f'epoch{config.checkpoint_epoch}_{config.set}_predicted.csv'
+    out_csv = config.xp_dir/f'epoch{config.checkpoint_epoch}_{config.set}_{config.aggregation}_predicted.csv'
     print(f"Saving prediction CSV to file {str(out_csv)}")
     df_y_pred.to_csv(out_csv, index=True, index_label='sample_id')

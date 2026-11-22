@@ -8,17 +8,57 @@
 seed: 42
 # the size of each batch of images when training
 # careful not to use a too large batch size, might lead to OOM errors
-batch_size: 32
+batch_size: 16
 # the number of epochs to train for
-epochs: 90
+epochs: 20
 # the learning rate
 lr: 0.001
-# the path to the root directory of the dataset
-dataset_folder: '~/challenge-ens/data/dataset_UNZIPPED'
+# the path to the root directory of the dataset (relative paths are relative to the repo root)
+# it must contain train/images, train/masks and test/images
+dataset_folder: '../additional_files_earthcube_emu4zqr/dataset'
 # the path to the root directory used to store experiments
 # a directory per experiment will be created named with the datetime during execution
-xp_rootdir: '~/challenge-ens/code/experiments'
+xp_rootdir: 'experiments'
+# use only a random subset of the images to go faster (null = all the images)
+# the full set has ~16 600 training images and ~1 850 validation images
+max_train_samples: 2000
+max_val_samples: 300
+# number of batches per "epoch" (null = one full pass over the training images).
+# A short epoch updates the validation score, the curves and the prediction plots more often,
+# for the same total training time (total images seen = epochs x steps_per_epoch x batch_size)
+steps_per_epoch: 40
+# number of epochs without improvement of the validation loss before halving the learning rate
+lr_patience: 5
 # CSV file containing the samples to use in the validation set
 # if null, a random train/val split is performed, with 10% of the samples held out for validation
 # the validation samples will be saved to a file 'val_samples.csv' in the experiment directory
 val_samples_csv: null
+
+# the model to train
+#   - unet          : benchmark U-Net (kwargs: num_layers)
+#   - deeplabv3plus : DeepLabV3+ with a MobileNetV2 encoder (~1.1M parameters)
+#       kwargs: pretrained   -> null (from scratch) or 'imagenet' (ImageNet RGB photos, not Sentinel-2;
+#                               the NIR channel is initialised with the mean of the RGB filters)
+#               backbone_alpha -> width multiplier of MobileNetV2 (0.35, 0.5, 0.75, 1.0)
+model:
+  name: deeplabv3plus
+  kwargs:
+    pretrained: null
+    backbone_alpha: 1.0
+# example to train the benchmark instead:
+# model:
+#   name: unet
+#   kwargs:
+#     num_layers: 2
+
+# per-pixel weighting of the loss: null (all classes weighted 1) or 'inverse_sqrt_freq'
+# (rare classes weighted more, clipped to 10). "no_data" and "clouds" are always weighted 0.
+class_weighting: null
+
+# visualization (PNG files saved in <experiment>/plots/)
+# open the figures automatically (Windows): dataset samples at the start, curves + predictions at the end
+show_plots: true
+# number of training samples shown in plots/dataset_samples.png
+num_dataset_samples: 10
+# number of validation images whose predictions are plotted after every epoch (predictions_epochXXX.png)
+num_prediction_samples: 4

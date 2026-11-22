@@ -1,7 +1,13 @@
 """
 Evaluate the model prediction.
 """
+import sys
 from pathlib import Path
+# make the "framework" package importable whatever the way the script is launched
+# (VS Code "Run Python File", `python framework/train.py`, or `python -m framework.train`)
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 import argparse
 import numpy as np
 import pandas as pd

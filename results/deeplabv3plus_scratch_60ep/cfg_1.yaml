@@ -1,0 +1,20 @@
+seed: 42
+batch_size: 32
+epochs: 60
+lr: 0.001
+dataset_folder: ../additional_files_earthcube_emu4zqr/dataset
+xp_rootdir: experiments
+max_train_samples: null
+max_val_samples: null
+steps_per_epoch: null
+lr_patience: 5
+val_samples_csv: null
+model:
+  name: deeplabv3plus
+  kwargs:
+    pretrained: null
+    backbone_alpha: 1.0
+class_weighting: null
+show_plots: false
+num_dataset_samples: 10
+num_prediction_samples: 4
