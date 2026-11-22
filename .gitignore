@@ -1,5 +1,6 @@
 # Project files and folders
-
+rapport/
+*.tar.gz
 /experiments
 
 # Byte-compiled / optimized / DLL files
@@ -149,3 +150,5 @@ swin-transformers-tf-main/
 code.zip
 curves.png
 *.pt
+
+rapport.*

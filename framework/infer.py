@@ -3,6 +3,7 @@ Predict the targets using a trained model.
 """
 from pathlib import Path
 import argparse
+import time
 import yaml
 import random
 import numpy as np
@@ -91,12 +92,16 @@ if __name__ == '__main__':
 
     print(f"Predict the vectors over the {config.set} dataset")
     y_pred, y_true = [], []
+    t0 = time.perf_counter()
     with torch.no_grad(), torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == 'cuda'):
         for batch in tqdm(loader):
             image = (batch[0] if with_mask else batch).to(device)
             y_pred.append(predict_distribution(predict_tta(model, image, config.tta), config.pred_mode).cpu())
             if with_mask:
                 y_true.append(class_distribution(batch[1]))
+    # ponytail: end-to-end time (disk reading + first-batch warmup included); .cpu() above syncs the GPU
+    dt = time.perf_counter() - t0
+    print(f"Inference: {dt:.1f} s, {len(test_files) / dt:.1f} images/s, {1000 * dt / len(test_files):.2f} ms/image")
 
     # get the samples ids
     ids_s = pd.Series([int(f.stem) for f in test_files], name='sample_id', dtype='uint32')
