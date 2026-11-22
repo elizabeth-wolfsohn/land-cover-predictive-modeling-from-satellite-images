@@ -17,10 +17,12 @@ from framework.preprocessing.config import cfg_get
 from framework.preprocessing import spectral as spectral_mod
 from framework import inference_utils
 
+TRAIN_CONFIG_PATH = 'train_config.yaml'
 
-def load_train_config(xp_dir):
+def load_train_config():
     """The training config saved by train.py in the experiment folder, or None (old experiments)."""
-    path = Path(xp_dir)/'train_config.yaml'
+    path = Path(TRAIN_CONFIG_PATH)
+    print(path)
     if not path.is_file():
         return None
     with open(path, 'r') as f:
@@ -127,6 +129,9 @@ if __name__ == '__main__':
         np.random.seed(config.seed)
         tf.random.set_seed(config.seed)
 
+    with open(TRAIN_CONFIG_PATH, 'r') as f:
+        train_config = yaml.load(f, Loader=yaml.FullLoader)
+
     N_CPUS = multiprocessing.cpu_count()
 
     print(f"Instanciate {config.set} dataset")
@@ -153,7 +158,9 @@ if __name__ == '__main__':
         .map(load_image_test, num_parallel_calls=N_CPUS)
 
     # same spectral indices as during training (read from the saved training config)
-    spectral = spectral_mod.from_config(load_train_config(config.xp_dir))
+    print(load_train_config())
+    spectral = spectral_mod.from_config(load_train_config())
+    print(f"SPECTRAL : {spectral}")
     if spectral is not None:
         print(f"Appending spectral indices: {spectral}")
         test_dataset = test_dataset.map(spectral.append, num_parallel_calls=N_CPUS)

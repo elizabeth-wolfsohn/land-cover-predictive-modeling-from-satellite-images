@@ -15,6 +15,7 @@ def cfg_get(cfg, path, default=None):
     """
     cur = cfg
     for key in path.split('.'):
+        print(key, cfg)
         if cur is None:
             return default
         if isinstance(cur, dict):

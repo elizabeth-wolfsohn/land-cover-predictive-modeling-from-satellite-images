@@ -16,6 +16,8 @@ from framework.dataset import parse_image, load_image_train, load_image_test
 from framework.model import UNet
 from framework.tensorflow_utils import plot_predictions
 from framework.utils import YamlNamespace
+from framework.preprocessing.pipeline import build_datasets 
+from framework.losses import build_loss
 
 
 def build_class_weights(counts, mode='power', power=0.5, max_weight=None, ignored_idx=(0, 1)):
@@ -221,21 +223,31 @@ if __name__ == '__main__':
     trainset_size = len(train_files)
     valset_size = len(val_files)
 
-    train_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, train_files)))\
-        .map(parse_image, num_parallel_calls=N_CPUS)
-    val_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, val_files)))\
-        .map(parse_image, num_parallel_calls=N_CPUS)
+    if config.spectral_indices.enabled==True:
 
-    train_dataset = train_dataset.map(load_image_train, num_parallel_calls=N_CPUS)\
-        .shuffle(buffer_size=1024, seed=config.seed)\
-        .repeat()\
-        .batch(config.batch_size)\
-        .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+        train_dataset, val_dataset, info = build_datasets(config, train_files, val_files, config.xp_rootdir, n_cpus=N_CPUS)
+        print(f"Train : {info['description']}")
+        num_additional_class = 2
 
-    val_dataset = val_dataset.map(load_image_test, num_parallel_calls=N_CPUS)\
-        .repeat()\
-        .batch(config.batch_size)\
-        .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+    else:
+
+        train_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, train_files)))\
+            .map(parse_image, num_parallel_calls=N_CPUS)
+        val_dataset = tf.data.Dataset.from_tensor_slices(list(map(str, val_files)))\
+            .map(parse_image, num_parallel_calls=N_CPUS)
+
+        train_dataset = train_dataset.map(load_image_train, num_parallel_calls=N_CPUS)\
+            .shuffle(buffer_size=1024, seed=config.seed)\
+            .repeat()\
+            .batch(config.batch_size)\
+            .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+        val_dataset = val_dataset.map(load_image_test, num_parallel_calls=N_CPUS)\
+            .repeat()\
+            .batch(config.batch_size)\
+            .prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
+
+        num_additional_class = 0
 
     # where to write files for this experiments
     xp_dir = config.xp_rootdir / datetime.datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
@@ -273,7 +285,7 @@ if __name__ == '__main__':
     ]
     # create the U-Net model to train
     unet_kwargs = dict(
-        input_shape=(LCD.IMG_SIZE, LCD.IMG_SIZE, LCD.N_CHANNELS),
+        input_shape=(LCD.IMG_SIZE, LCD.IMG_SIZE, LCD.N_CHANNELS + num_additional_class),
         num_classes=LCD.N_CLASSES,
         num_layers=2
     )
@@ -306,7 +318,16 @@ if __name__ == '__main__':
 
     print(f"Will use class weights: {class_weight}")
 
-    loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+    loss_cfg = _optional_config_value(config, 'loss')
+    loss = build_loss(
+        loss_type=_optional_config_value(loss_cfg, 'type', 'ce'),
+        n_classes=LCD.N_CLASSES,
+        ignored_idx=LCD.IGNORED_CLASSES_IDX,
+        ce_weight=_optional_config_value(loss_cfg, 'ce_weight', 1.0),
+        kl_weight=_optional_config_value(loss_cfg, 'kl_weight', 1.0),
+    )
+    print(f"Loss: {loss.name}"
+          + (f" (ce_weight={loss.ce_weight}, kl_weight={loss.kl_weight})" if hasattr(loss, 'kl_weight') else ""))
     print("Compile model")
     model.compile(optimizer=optimizer,
                   loss=loss,

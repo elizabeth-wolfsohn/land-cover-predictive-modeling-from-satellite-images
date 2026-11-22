@@ -67,10 +67,12 @@ class SpectralIndices:
 def from_config(config):
     """SpectralIndices from the `spectral_indices` config section, or None if disabled."""
     if not section_enabled(config, 'spectral_indices'):
+        print("NOT ENABLED")
         return None
     band_order = cfg_get(config, 'spectral_indices.band_order', None)
     if band_order is not None and not isinstance(band_order, dict):
         band_order = vars(band_order)  # YamlNamespace -> dict
+    print(f"BAND ORDER : {band_order}")
     return SpectralIndices(
         names=cfg_get(config, 'spectral_indices.indices', ['ndvi', 'ndwi']),
         band_order=band_order,

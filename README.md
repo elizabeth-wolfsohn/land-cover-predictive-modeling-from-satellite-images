@@ -81,9 +81,9 @@ ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv -
 ```
 Examples:
 * Evaluate on training set:
-
+challenge-ens/code/experiments/
 ```
-ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv --pred-file challenge-ens/code/experiments/19-11-2026_17:41:48/epoch90_test_predicted.csv --out-csv challenge-ens/code/experiments/19-11-2026_17:41:48/epoch90_train_score.csv
+ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv --pred-file challenge-ens/code/experiments/21-11-2026_16:15:13/epoch90_test_predicted.csv --out-csv challenge-ens/code/experiments/21-11-2026_16:15:13/epoch90_test_score.csv
 ```
 where ../data/dataset_csvs/train_labels.csv is where is stored the *y_train* file of the challenge.
 
