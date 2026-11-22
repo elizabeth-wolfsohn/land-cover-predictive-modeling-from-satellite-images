@@ -37,10 +37,12 @@ class LandCoverData():
     # is not a proper land cover type and images and masks do not exactly match in time.
     IGNORED_CLASSES_IDX = [0, 1]
 
-    # The training dataset contains 18491 images and masks
-    # The test dataset contains 5043 images and masks
-    TRAINSET_SIZE = 18491
-    TESTSET_SIZE = 5043
+    # The original challenge training set contains 18491 images and masks, split by the group into
+    # train / validation / test (local_dataset/csv_files/*_images.csv): 14794 / 1848 / 1849 images.
+    # The official challenge test set contains 5043 images (no masks).
+    TRAINSET_SIZE = 14794  # 18491 before the split
+    VALSET_SIZE = 1848
+    TESTSET_SIZE = 1849  # 5043 for the official challenge test set
 
     # for visualization of the masks: classes indices and RGB colors
     CLASSES_COLORPALETTE = {
@@ -58,9 +60,16 @@ class LandCoverData():
     CLASSES_COLORPALETTE = {c: np.asarray(color) for (c, color) in CLASSES_COLORPALETTE.items()}
 
     # statistics
-    # the pixel class counts in the training set
+    # the pixel class counts in the training set of the group split (train_images.csv)
+    # (used only by the optional class weighting of the loss)
     TRAIN_CLASS_COUNTS = np.array(
-        [0, 20643, 60971025, 404760981, 277012377, 96473046, 333407133, 9775295, 1071, 29404605]
+        [0, 17441, 48775625, 323881666, 222414642, 76948228, 265937117, 7749139, 828, 23814898]
+        # [0, 20643, 60971025, 404760981, 277012377, 96473046, 333407133, 9775295, 1071, 29404605]
+        # -> whole original training set (18491 images)
+    )
+    # the pixel class counts in the validation set of the group split (validation_images.csv)
+    VAL_CLASS_COUNTS = np.array(
+        [0, 1249, 6258733, 40140226, 27516024, 10176292, 33510997, 1030736, 23, 2476248]
     )
     # the minimum and maximum value of image pixels in the training set
     TRAIN_PIXELS_MIN = 1
