@@ -15,7 +15,11 @@ xp_rootdir: 'experiments'
 # the name of log directory for an experiment (result of training)
 # you can set to 'last' to refer to the lastly created directory under in <xp_rootdir>
 xp_name: 'last'
-# the set to perform inference on: 'train', 'test' or 'val'
+# the set to perform inference on:
+#   'train', 'val'  : training / validation images of the experiment
+#   'test_split'    : held-out test images of the predefined split (score with framework/eval.py
+#                     and -g local_dataset/csv_files/test_labels.csv)
+#   'test'          : official challenge test set (no labels, CSV to submit on the website)
 # note: 'train' mean all train samples with the ones in validation excluded, and 'val' mean the ones in validation
 set: 'test'
 # the output prediction for the set will be saved to a file 'epoch<checkpoint_epoch>_<set>_predicted.csv' in the experiment directory

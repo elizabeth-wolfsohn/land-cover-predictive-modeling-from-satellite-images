@@ -34,6 +34,14 @@ lr_patience: 5
 # the validation samples will be saved to a file 'val_samples.csv' in the experiment directory
 val_samples_csv: null
 
+# predefined train / validation / test split (CSV files with one 'sample_id' column), shared by
+# the whole group. When train_image_path is set, val_samples_csv is ignored and the test images
+# are never used for training (they are listed in <experiment>/test_samples.csv).
+# Set train_image_path to null to go back to the random 90/10 train/validation split.
+train_image_path: 'local_dataset/csv_files/train_images.csv'
+val_image_path: 'local_dataset/csv_files/validation_images.csv'
+test_image_path: 'local_dataset/csv_files/test_images.csv'
+
 # the model to train
 #   - unet          : benchmark U-Net (kwargs: num_layers)
 #   - deeplabv3plus : DeepLabV3+ with a MobileNetV2 encoder (~1.1M parameters)

@@ -19,11 +19,13 @@ yaml.safe_dump(cfg, open(out, 'w'), sort_keys=False)
 PY
 }
 
-# 1) DeepLabV3+ from scratch (crée le découpage de validation)
+# les 3 modèles utilisent le découpage train / validation / test du groupe
+# (train_image_path, val_image_path, test_image_path dans train_config.yaml)
+VAL=none
+
+# 1) DeepLabV3+ from scratch
 make_cfg cfg_1.yaml deeplabv3plus none none
 python -m framework.train -c cfg_1.yaml > log_1_deeplab_scratch.txt 2>&1
-VAL="$(ls -td experiments/*/ | head -1)val_samples.csv"
-echo "Validation commune : $VAL"
 
 # 2) DeepLabV3+ pré-entraîné ImageNet, même validation
 make_cfg cfg_2.yaml deeplabv3plus imagenet "$VAL"

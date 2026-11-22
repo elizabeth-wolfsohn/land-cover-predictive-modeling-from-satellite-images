@@ -111,7 +111,7 @@ def _parse_args():
     else:
         config.xp_dir = config.xp_rootdir/config.xp_name
     assert config.xp_dir.is_dir()
-    assert config.set in ('train', 'test', 'val')
+    assert config.set in ('train', 'test', 'val', 'test_split')
     if not hasattr(config, 'aggregation'):
         config.aggregation = 'argmax'
     assert config.aggregation in ('argmax', 'soft')
@@ -135,7 +135,14 @@ if __name__ == '__main__':
 
     print(f"Instanciate {config.set} dataset")
     if config.set == 'test':
+        # official challenge test set (no labels: submit the CSV on the challenge website)
         test_files = sorted(config.dataset_folder.glob('test/images/*.tif'))
+    elif config.set == 'test_split':
+        # held-out test images of the predefined split (labels in local_dataset/csv_files/test_labels.csv)
+        test_csv = config.xp_dir/'test_samples.csv'
+        assert test_csv.is_file(), f"{test_csv} not found: the model was not trained with a predefined test split"
+        test_ids = pd.read_csv(test_csv).squeeze('columns')
+        test_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in test_ids]
     else:
         val_samples_s = pd.read_csv(config.xp_dir/'val_samples.csv').squeeze('columns')
         val_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in val_samples_s]

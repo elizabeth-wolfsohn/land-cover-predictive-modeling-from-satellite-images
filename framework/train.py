@@ -74,6 +74,17 @@ def _parse_args():
     if config.val_samples_csv is not None:
         config.val_samples_csv = (ROOT_DIR/Path(config.val_samples_csv).expanduser()).resolve()
         assert config.val_samples_csv.is_file()
+    # predefined train / validation / test split (CSV files with a 'sample_id' column),
+    # same option names as the group's code (local_dataset/csv_files/*_images.csv)
+    for key in ('train_image_path', 'val_image_path', 'test_image_path'):
+        value = getattr(config, key, None)
+        if value is not None:
+            value = (ROOT_DIR/Path(value).expanduser()).resolve()
+            if not value.is_file():
+                raise FileNotFoundError(f"{key} not found: {value}")
+        setattr(config, key, value)
+    if config.train_image_path is not None and config.val_image_path is None:
+        raise ValueError("val_image_path must be set when train_image_path is set")
     # defaults for options added after the original benchmark
     if not hasattr(config, 'model') or config.model is None:
         config.model = YamlNamespace({'name': 'unet', 'kwargs': {'num_layers': 2}})
@@ -111,24 +122,46 @@ if __name__ == '__main__':
     N_CPUS = multiprocessing.cpu_count()
 
     print('Instanciate train and validation datasets')
-    train_files = list(config.dataset_folder.glob('train/images/*.tif'))
-    # shuffle list of training samples files
-    train_files = random.sample(train_files, len(train_files))
-    devset_size = len(train_files)
-    # validation set
-    if config.val_samples_csv is not None:
-        # read the validation samples
-        val_samples_s = pd.read_csv(config.val_samples_csv).squeeze('columns')
-        val_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in val_samples_s]
-        train_files = [f for f in train_files if f not in set(val_files)]
-        valset_size = len(val_files)
-        trainset_size = len(train_files)
-        assert valset_size + trainset_size == devset_size
+    test_files = []
+    if config.train_image_path is not None:
+        # predefined split: train / validation / test images read from the CSV files
+        files_by_id = {int(f.stem): f for f in config.dataset_folder.glob('train/images/*.tif')}
+        split_ids = {}
+        for name, csv_path in (('train', config.train_image_path), ('val', config.val_image_path),
+                               ('test', config.test_image_path)):
+            ids = pd.read_csv(csv_path).iloc[:, 0].astype(int).tolist() if csv_path is not None else []
+            missing = [i for i in ids if i not in files_by_id]
+            if missing:
+                raise ValueError(f"{csv_path}: {len(missing)} image(s) missing from train/images, e.g. {missing[:5]}")
+            split_ids[name] = ids
+        for a, b in (('train', 'val'), ('train', 'test'), ('val', 'test')):
+            common = set(split_ids[a]) & set(split_ids[b])
+            if common:
+                raise ValueError(f"{len(common)} image(s) in both the {a} and {b} sets")
+        train_files = random.sample([files_by_id[i] for i in split_ids['train']], len(split_ids['train']))
+        val_files = [files_by_id[i] for i in split_ids['val']]
+        test_files = [files_by_id[i] for i in split_ids['test']]
+        print(f"Predefined split: {len(train_files)} train, {len(val_files)} validation, "
+              f"{len(test_files)} test images (the test images are never used for training)")
     else:
-        # generate a hold-out validation set from the training set
-        valset_size = int(len(train_files) * 0.1)
-        train_files, val_files = train_files[valset_size:], train_files[:valset_size]
-        trainset_size = len(train_files)
+        train_files = list(config.dataset_folder.glob('train/images/*.tif'))
+        # shuffle list of training samples files
+        train_files = random.sample(train_files, len(train_files))
+        devset_size = len(train_files)
+        # validation set
+        if config.val_samples_csv is not None:
+            # read the validation samples
+            val_samples_s = pd.read_csv(config.val_samples_csv).squeeze('columns')
+            val_files = [config.dataset_folder/'train/images/{}.tif'.format(i) for i in val_samples_s]
+            train_files = [f for f in train_files if f not in set(val_files)]
+            valset_size = len(val_files)
+            trainset_size = len(train_files)
+            assert valset_size + trainset_size == devset_size
+        else:
+            # generate a hold-out validation set from the training set
+            valset_size = int(len(train_files) * 0.1)
+            train_files, val_files = train_files[valset_size:], train_files[:valset_size]
+            trainset_size = len(train_files)
 
     # optionally train / validate on a random subset of the images (faster experiments)
     # the files are already shuffled with the seed, so the subset is random and reproducible
@@ -194,6 +227,12 @@ if __name__ == '__main__':
     # save the validation samples to a CSV
     val_samples_s = pd.Series([int(f.stem) for f in val_files], name='sample_id', dtype='uint32')
     val_samples_s.to_csv(xp_dir/'val_samples.csv', index=False)
+    pd.Series(sorted(int(f.stem) for f in train_files), name='sample_id', dtype='uint32')\
+        .to_csv(xp_dir/'train_samples.csv', index=False)
+    if test_files:
+        # held-out test images: evaluate them with infer.py (set: 'test_split') once the model is chosen
+        pd.Series([int(f.stem) for f in test_files], name='sample_id', dtype='uint32')\
+            .to_csv(xp_dir/'test_samples.csv', index=False)
 
     # visualize a few samples of the dataset (images, false colours, masks)
     samples_png = plot_dataset_samples(train_files, xp_dir/'plots'/'dataset_samples.png',

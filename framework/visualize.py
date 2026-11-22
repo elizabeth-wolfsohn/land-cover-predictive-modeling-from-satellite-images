@@ -32,7 +32,7 @@ def _parse_args():
     parser.add_argument('--xp', default=None, help="experiment name (default: xp_name of the config)")
     parser.add_argument('--epoch', type=int, default=None,
                         help="checkpoint epoch (default: checkpoint_epoch of the config, or the last one)")
-    parser.add_argument('--set', choices=['val', 'test'], default='val',
+    parser.add_argument('--set', choices=['val', 'test_split', 'test'], default='val',
                         help="images to predict on: 'val' (with ground truth) or 'test'")
     parser.add_argument('--num', type=int, default=None,
                         help="number of images to plot (default: 10 for the dataset, 6 for predictions)")
@@ -96,15 +96,16 @@ def main():
         print(f"Checkpoint epoch {args.epoch} not found, using the last one ({epoch})")
 
     # images to predict on
-    if args.set == 'val':
-        ids = pd.read_csv(xp_dir/'val_samples.csv').squeeze('columns').tolist()
+    if args.set in ('val', 'test_split'):
+        csv_name = 'val_samples.csv' if args.set == 'val' else 'test_samples.csv'
+        ids = pd.read_csv(xp_dir/csv_name).squeeze('columns').tolist()
         files = [args.dataset_folder/'train/images'/f'{i}.tif' for i in ids]
     else:
         files = sorted(args.dataset_folder.glob('test/images/*.tif'))
     files = rng.sample(files, min(args.num or 6, len(files)))
     images, masks = zip(*(load_sample(f) for f in files))
     images = np.stack(images).astype(np.float32) / LCD.TRAIN_PIXELS_MAX
-    masks = np.stack(masks) if args.set == 'val' else None
+    masks = np.stack(masks) if args.set != 'test' else None
 
     import tensorflow as tf
     model = tf.keras.models.load_model(str(ckpt_dir/f'epoch{epoch}'), compile=False)
