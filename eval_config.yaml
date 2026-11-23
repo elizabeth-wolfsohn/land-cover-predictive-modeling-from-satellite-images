@@ -3,7 +3,7 @@ dataset_folder: local_dataset
 
 # Experiment
 xp_rootdir: experiments
-xp_name: 22-11-2026_13-07-14
+xp_name: 22-11-2026_16-41-21
 
 # Evaluation dataset
 set: test # train, val ou test

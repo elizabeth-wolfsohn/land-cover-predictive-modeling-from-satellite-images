@@ -129,16 +129,9 @@ def load_image_train(input_image, input_mask):
     if tf.random.uniform(()) > 0.5:
         image = tf.image.flip_left_right(image)
         mask = tf.image.flip_left_right(mask)
-    if tf.random.uniform(()) > 0.5:
-        image = tf.image.flip_up_down(image)
-        mask = tf.image.flip_up_down(mask)
-    if tf.random.uniform(()) > 0.5:
-        image = tf.image.rot90(image)
-        mask = tf.image.rot90(mask)
-    elif tf.random.uniform(()) > 0.5:
-        image = tf.image.rot90(image, k=3)
-        mask = tf.image.rot90(mask, k=3)
-
+    k = tf.random.uniform((), minval=0, maxval=4, dtype=tf.int32)
+    image = tf.image.rot90(image, k)
+    mask = tf.image.rot90(mask, k)
     image, mask = normalize(image, mask)
     return image, mask
 

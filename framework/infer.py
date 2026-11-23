@@ -11,6 +11,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 import tensorflow as tf
+import time
+import json
 
 from framework.dataset import LandCoverData as LCD
 from framework.utils import YamlNamespace
@@ -69,13 +71,18 @@ def predict_as_vectors(model, dataset, files, pred_mask_dir, steps=None):
     print(f"Saving prediction masks to directory {pred_mask_dir}")
 
     predictions = []
+    batch_times = []
     idx = 0  # position in the list of files
     for batch in tqdm(dataset, total=steps):
         # predict a raster for each sample in the batch
+        t0 = time.perf_counter()
         pred_raster = model.predict_on_batch(batch)
+        dt = time.perf_counter() - t0
 
         (batch_size, _, _, num_classes) = tuple(pred_raster.shape)
+        batch_times.append((dt, batch_size))
         pred_mask = tf.argmax(pred_raster, -1)  # (bs, 256, 256)
+        
 
         # save the predicted masks, named like the input images
         masks_np = pred_mask.numpy().astype(np.uint8)
@@ -90,7 +97,7 @@ def predict_as_vectors(model, dataset, files, pred_mask_dir, steps=None):
         predictions.append(counts / tf.math.reduce_sum(counts, -1, keepdims=True))
 
     predictions = tf.concat(predictions, 0)
-    return predictions.numpy()
+    return predictions.numpy(), batch_times
 
 
 def _parse_args():
@@ -118,6 +125,28 @@ def _parse_args():
     assert config.set in ('train', 'test', 'val')
 
     return config
+
+
+
+
+def summarize_timings(batch_times, warmup=1):
+    """Statistiques d'inférence. Le(s) premier(s) batch(s) sont ignorés
+    (tracing du graphe / initialisation GPU)."""
+    bt = batch_times[warmup:] if len(batch_times) > warmup else batch_times
+    durations = np.array([d for d, _ in bt])
+    n_images = sum(n for _, n in bt)
+    per_image_ms = np.array([d / n * 1000 for d, n in bt])
+    return {
+        "n_batches_measured": len(bt),
+        "n_images_measured": int(n_images),
+        "first_batch_s (warmup)": float(batch_times[0][0]),
+        "total_inference_s": float(durations.sum()),
+        "throughput_img_per_s": float(n_images / durations.sum()),
+        "latency_ms_per_image_mean": float(per_image_ms.mean()),
+        "latency_ms_per_image_median": float(np.median(per_image_ms)),
+        "latency_ms_per_image_p95": float(np.percentile(per_image_ms, 95)),
+        "batch_size": int(bt[0][1]),
+    }
 
 
 if __name__ == '__main__':
@@ -172,12 +201,22 @@ if __name__ == '__main__':
     pred_mask_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Predict the vectors over the {config.set} dataset")
-    y_pred = predict_as_vectors(
+    y_pred, batch_times= predict_as_vectors(
         model, test_dataset,
         files=test_files,
         pred_mask_dir=pred_mask_dir,
         steps=math.ceil(testset_size / config.batch_size),
     )
+
+    
+    stats = summarize_timings(batch_times, warmup=1)
+    print("Inference timing:")
+    for k, v in stats.items():
+        print(f"  {k}: {v}")
+    with open(config.xp_dir / f'{tag}_{config.set}_inference_timing.json', 'w') as f:
+        json.dump(stats, f, indent=2)
+
+
 
     # get the samples ids
     ids_s = pd.Series([int(f.stem) for f in test_files], name='sample_id', dtype='uint32')

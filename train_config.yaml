@@ -25,3 +25,9 @@ xp_rootdir: 'experiments/'
 # if null, a random train/val split is performed, with 10% of the samples held out for validation
 # the validation samples will be saved to a file 'val_samples.csv' in the experiment directory
 validation_folder: 'local_dataset/validation'
+
+
+loss:
+  type: ce_kl   
+  ce_weight: 1.0
+  kl_weight: 10.0

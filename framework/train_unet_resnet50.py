@@ -16,6 +16,7 @@ from framework.dataset import parse_image, load_image_train, load_image_test
 from framework.models.resnet50 import build_resnet50_unet
 from framework.tensorflow_utils import plot_predictions
 from framework.utils import YamlNamespace
+from framework.losses import build_loss
 
 
 
@@ -61,6 +62,14 @@ class PlotCallback(tf.keras.callbacks.Callback):
             save_filepaths=save_filepaths
         )
 
+
+def _optional_config_value(config, key, default=None):
+    """Renvoie config.<key>, ou `default` si la clé est absente du fichier YAML."""
+    try:
+        value = getattr(config, key)
+    except (AttributeError, KeyError):
+        return default
+    return default if value is None else value
 
 
 def _parse_args():
@@ -449,9 +458,18 @@ if __name__ == '__main__':
         learning_rate=config.lr
     )
 
-    loss = tf.keras.losses.SparseCategoricalCrossentropy(
-        from_logits=False
-    )
+    # loss = tf.keras.losses.SparseCategoricalCrossentropy(
+    #     from_logits=False
+    # )
+
+    loss_cfg = _optional_config_value(config, 'loss')
+    loss = build_loss(
+    loss_type=_optional_config_value(loss_cfg, 'type', 'ce'),
+    n_classes=LCD.N_CLASSES,
+    ignored_idx=LCD.IGNORED_CLASSES_IDX,
+    ce_weight=_optional_config_value(loss_cfg, 'ce_weight', 1.0),
+    kl_weight=_optional_config_value(loss_cfg, 'kl_weight', 1.0),
+)
 
     print("Compile model")
 

@@ -157,6 +157,7 @@ def build_confusion_matrix(gt_mask_dir, pred_mask_dir):
     return df_cm
 
 
+
 def parse_args():
     parser = argparse.ArgumentParser("Evaluation script")
     parser.add_argument(
@@ -299,6 +300,12 @@ if __name__ == "__main__":
     # 2. Pixel-wise confusion matrix
     # --------------------------------------------------
     df_cm=build_confusion_matrix(gt_mask_dir=gt_mask_dir,  pred_mask_dir=pred_mask_dir)
+
+
+    metric_cols = ["Recall (%)", "Precision (%)", "F1-score (%)", "IoU (%)"]
+    df_mean = df_cm[metric_cols].mean().rename("mean").rename_axis("metric")
+    df_mean.to_csv(xp_dir / f"mean_metrics_{tag}_{set_name}.csv")
+    print(df_mean)
  
 
     print("\nPixel-wise confusion matrix:")
