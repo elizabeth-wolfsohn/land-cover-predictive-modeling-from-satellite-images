@@ -187,7 +187,12 @@ if __name__ == "__main__":
     
 
     ckpt = str(cfg["checkpoint_epoch"])          # 'best' ou un entier
-    tag = "best" if ckpt == "best" else f"epoch{int(ckpt)}"
+    if ckpt == "best":
+        tag = "best"  
+    elif ckpt == "rf" :
+        tag = "rf"
+    else :
+        tag=f"epoch{int(ckpt)}"
     prediction_file_name = f"{tag}_{set_name}_predicted.csv"
     
 

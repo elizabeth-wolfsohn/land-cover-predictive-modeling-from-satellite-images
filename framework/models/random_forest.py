@@ -25,9 +25,6 @@ def read_mask(path) -> np.ndarray:
 def mask_path_from_image(image_path):
     return image_path.parent.parent / 'masks' / image_path.name
 
-
-
-
 def extract_features(img: np.ndarray) -> np.ndarray:
     """(H, W, 4) -> (H, W, 10) feature cube."""
 
@@ -103,34 +100,30 @@ class LandCoverRF:
             )
 
     def fit(self, X, y):
+        self.classes_, y_idx = np.unique(y, return_inverse=True)   # classes_ = [2..9]
         if self.backend == 'gpu':
-            # cuML veut float32 / int32, et n'a pas class_weight
-            X, y = balance_pixels(X, y)
+            X, y_idx = balance_pixels(X, y_idx)
             X = np.ascontiguousarray(X, dtype=np.float32)
-            y = np.ascontiguousarray(y, dtype=np.int32)
-        self.model.fit(X, y)
+            y_idx = np.ascontiguousarray(y_idx, dtype=np.int32)
+        self.model.fit(X, y_idx)
         return self
 
     def predict_image(self, img, stride=1):
         feats = extract_features(img)[::stride, ::stride]
         h, w, f = feats.shape
         flat = np.ascontiguousarray(feats.reshape(h * w, f), dtype=np.float32)
-        pred = self.model.predict(flat)
-        return np.asarray(pred).reshape(h, w).astype(np.int64)
-
-    def predict_proportions(self, img, stride=1):
-        pred = self.predict_image(img, stride)
-        counts = np.bincount(pred.ravel(), minlength=LCD.N_CLASSES)
-        return counts / counts.sum()
+        pred_idx = np.asarray(self.model.predict(flat)).astype(np.int64)
+        return self.classes_[pred_idx].reshape(h, w).astype(np.int64)
 
     def save(self, path):
-        joblib.dump({'backend': self.backend, 'model': self.model}, path, compress=3)
+        joblib.dump({'backend': self.backend, 'model': self.model,
+                    'classes_': self.classes_}, path, compress=3)
 
     @classmethod
     def load(cls, path):
         data = joblib.load(path)
         obj = cls.__new__(cls)
-        obj.backend, obj.model = data['backend'], data['model']
+        obj.backend, obj.model, obj.classes_ = data['backend'], data['model'], data['classes_']
         if obj.backend == 'cpu':
             obj.model.verbose = 0
         return obj

@@ -151,10 +151,6 @@ if __name__ == '__main__':
     if not train_files:
         raise ValueError("Aucune image trouvée dans train/images/")
 
-    # if max_images is not None:
-    #     train_files = train_files[:max_images]
-
-
     if max_images is not None:
         train_files = stratified_image_selection(
             train_files,
@@ -186,6 +182,8 @@ if __name__ == '__main__':
 
     print(f'Configuration saved to {config_out}')
 
+    backend = cfg.get('backend', 'gpu')
+
     # --- Build the pixel training set ---
     t0 = time.perf_counter()
 
@@ -212,15 +210,15 @@ if __name__ == '__main__':
     t0 = time.perf_counter()
 
     rf = LandCoverRF(
-        n_estimators=n_estimators,
-        max_depth=max_depth,
-        min_samples_leaf=min_samples_leaf,
-        n_jobs=n_jobs,
-        random_state=seed,
-        max_features=max_features,
-        class_weight=class_weight
-
-    )
+    backend=backend,
+    n_estimators=n_estimators,
+    max_depth=max_depth,
+    min_samples_leaf=min_samples_leaf,
+    class_weight=class_weight,
+    max_features=max_features,
+    n_jobs=n_jobs,
+    random_state=seed,
+)
 
     rf.fit(X, y)
 

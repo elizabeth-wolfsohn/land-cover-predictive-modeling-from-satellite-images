@@ -64,9 +64,11 @@ if __name__ == '__main__':
 
     rf = LandCoverRF.load(xp_dir / 'rf.joblib')
 
+    print(f"Backend du modèle : {rf.backend}")
+
     # Dossier de sauvegarde des cartes de prédiction pixel par pixel
-    #mask_dir = xp_dir / f'{set_name}_predicted_masks'
-    #mask_dir.mkdir(parents=True, exist_ok=True)
+    pred_mask_dir = xp_dir / f'rf_{set_name}_pred_masks'
+    pred_mask_dir.mkdir(parents=True, exist_ok=True)
 
     y_pred = []
 
@@ -74,16 +76,16 @@ if __name__ == '__main__':
 
         img = read_image(image_path)
 
-        # # 1. Prédiction pixel par pixel
+        # 1. Prédiction pixel par pixel
         predicted_mask = rf.predict_image(img, stride=stride)
 
-        # # 2. Sauvegarde de la carte prédite
-        out_mask = mask_dir / image_path.name
+        # 2. Sauvegarde de la carte prédite
+        out_mask = pred_mask_dir / image_path.name
         imwrite(out_mask, predicted_mask.astype(np.uint8))
 
-    
-        proportions = rf.predict_proportions(img,stride)
-        y_pred.append(proportions)
+        # 3. Proportions calculées à partir du masque déjà prédit
+        counts = np.bincount(predicted_mask.ravel(), minlength=LCD.N_CLASSES)
+        y_pred.append(counts / counts.sum())
 
     # Sauvegarde des proportions par image
     y_pred = np.stack(y_pred)
@@ -101,4 +103,4 @@ if __name__ == '__main__':
     print(f"Saving prediction CSV to {out_csv}")
     df.to_csv(out_csv, index=True, index_label='sample_id')
 
-    print(f"Pixel-wise predictions saved in {mask_dir}")
+    print(f"Pixel-wise predictions saved in {pred_mask_dir}")
