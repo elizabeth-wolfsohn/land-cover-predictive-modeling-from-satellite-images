@@ -3,9 +3,9 @@ dataset_folder: local_dataset
 
 # Experiment
 xp_rootdir: experiments
-xp_name: 22-11-2026_16-41-21
+xp_name: 23-11-2026_15-18-17
 
 # Evaluation dataset
 set: test # train, val ou test
 
-checkpoint_epoch: 'best' # rf si c'est le Random Forest
+checkpoint_epoch: 'rf' # rf si c'est le Random Forest
