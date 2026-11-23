@@ -75,19 +75,13 @@ if __name__ == '__main__':
         img = read_image(image_path)
 
         # # 1. Prédiction pixel par pixel
-        # predicted_mask = rf.predict_image(img, stride=stride)
+        predicted_mask = rf.predict_image(img, stride=stride)
 
         # # 2. Sauvegarde de la carte prédite
-        # out_mask = mask_dir / image_path.name
-        # imwrite(out_mask, predicted_mask.astype(np.uint8))
+        out_mask = mask_dir / image_path.name
+        imwrite(out_mask, predicted_mask.astype(np.uint8))
 
-        # # 3. Calcul des proportions de classes
-        # counts = np.bincount(
-        #     predicted_mask.ravel(),
-        #     minlength=LCD.N_CLASSES
-        # )
-        #proportions = counts / counts.sum()
-
+    
         proportions = rf.predict_proportions(img,stride)
         y_pred.append(proportions)
 
@@ -107,4 +101,4 @@ if __name__ == '__main__':
     print(f"Saving prediction CSV to {out_csv}")
     df.to_csv(out_csv, index=True, index_label='sample_id')
 
-    # print(f"Pixel-wise predictions saved in {mask_dir}")
+    print(f"Pixel-wise predictions saved in {mask_dir}")
