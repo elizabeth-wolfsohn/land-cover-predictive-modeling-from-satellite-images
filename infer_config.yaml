@@ -20,7 +20,7 @@ xp_name: 'last'
 #   'final_test': the official test set of the challenge (dataset_UNZIPPED/test), the CSV to submit
 #   'train', 'val', 'test': the group's internal split, read from <set>_samples.csv in the experiment
 #   (ground truth in local_dataset/csv_files/*_labels.csv, also saved to '<set>_true.csv')
-set: 'final_test'
+set: 'test'
 # the model checkpoint to use: 'best' (best validation KL) or 'last'
 checkpoint: 'best'
 # 'argmax' (count the most confident class of each pixel) or 'soft' (average the probabilities)

@@ -2,6 +2,7 @@
 rapport/
 *.tar.gz
 /experiments
+*.zip 
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

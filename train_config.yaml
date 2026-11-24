@@ -16,7 +16,7 @@ backbone: 'swinv2_tiny_window8_256'
 # careful not to use a too large batch size, might lead to OOM errors
 batch_size: 32
 # the number of epochs to train for
-epochs: 40
+epochs: 90
 # the (max) learning rate, with linear warmup then cosine decay
 # suggested: 1e-4 for 'swin', 1e-3 for 'unet'
 lr: 0.0001
