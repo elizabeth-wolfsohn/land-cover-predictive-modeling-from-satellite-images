@@ -3,7 +3,7 @@ dataset_folder: './local_dataset'
  
 # Experiment
 xp_rootdir: './code/experiments'
-xp_name: last # nom du dossier d'expérience (ex. 24-11-2026_10:29:00) ou 'last'
+xp_name: 'swinv2_tiny_patch4_windows16'
  
 # Evaluation dataset
 set: test # train, val ou test

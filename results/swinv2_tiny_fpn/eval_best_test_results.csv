@@ -1,2 +1,2 @@
 gt_file,pred_file,score
-local_dataset/csv_files/test_labels.csv,code/experiments/24-11-2026_11:24:01/best_test_predicted.csv,0.00841914919054051
+local_dataset/csv_files/test_labels.csv,code/experiments/swinv2_tiny_patch4_windows8/best_test_predicted.csv,0.0020033910846004497
