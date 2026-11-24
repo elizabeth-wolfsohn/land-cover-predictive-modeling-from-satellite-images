@@ -1,21 +1,8 @@
 """
-Evaluate every trained experiment on the validation and held-out test sets of the group split.
-
-For each experiment of experiments/ trained with the predefined split (test_samples.csv present):
-  1. pick the best epoch on the VALIDATION set (lowest val_kl), never on the test set
-  2. predict the validation and test images once, and compute:
-       - the challenge metric (KL divergence) with the 'argmax' and 'soft' aggregations
-       - the pixel-wise confusion matrix with recall, precision, F1-score and IoU per class
-         (same definitions and output files as the group's framework/eval.py, branch elizabeth)
-  3. optionally predict the official challenge test set (CSV to submit on the website)
-  4. copy the small result files (logs, curves, metrics, CSV, no checkpoints) to results/<experiment>/
-
-A summary table is printed and saved to results/summary_test_split.csv.
-
-Usage (from the repo root, after the trainings; TF_USE_LEGACY_KERAS=1 with TensorFlow >= 2.16):
-    python evaluate_test.py
-    python evaluate_test.py --submission     # also predicts the official challenge test set
-    python evaluate_test.py --save-masks     # also writes the files expected by the group's eval.py
+Evaluate every trained experiment on the validation and held-out test sets of the group split:
+best epoch on validation (lowest val_kl), KL divergence (argmax / soft) and pixel-wise confusion
+matrix with recall, precision, F1-score and IoU per class (same definitions as the group's eval.py).
+Usage: python evaluate_test.py [--submission] [--save-masks]
 """
 import sys
 import shutil
@@ -42,9 +29,6 @@ def load_tif(path):
 
 
 def predict(model, image_files, mask_files=None, batch_size=32, save_mask_dir=None):
-    """Predict a list of images.
-    Returns the soft and argmax class proportions (N x C) and, if masks are given,
-    the ground-truth proportions and the pixel-wise confusion matrix (C x C)."""
     C = LCD.N_CLASSES
     soft, hard, true = [], [], []
     cm = np.zeros((C, C), dtype=np.int64)
@@ -54,8 +38,8 @@ def predict(model, image_files, mask_files=None, batch_size=32, save_mask_dir=No
     for start in range(0, len(image_files), batch_size):
         files = image_files[start:start + batch_size]
         x = np.stack([load_tif(f) for f in files]).astype(np.float32) / LCD.TRAIN_PIXELS_MAX
-        probs = np.asarray(model.predict_on_batch(x), dtype=np.float64)       # (B, H, W, C)
-        pred = probs.argmax(-1)                                               # (B, H, W)
+        probs = np.asarray(model.predict_on_batch(x), dtype=np.float64)
+        pred = probs.argmax(-1)
         soft.append(probs.mean(axis=(1, 2)))
         hard.append(np.stack([np.bincount(p.ravel(), minlength=C) / p.size for p in pred]))
         if save_mask_dir is not None:
@@ -65,7 +49,7 @@ def predict(model, image_files, mask_files=None, batch_size=32, save_mask_dir=No
             for p, mf in zip(pred, mask_files[start:start + batch_size]):
                 y = load_tif(mf).ravel().astype(np.int64)
                 true.append(np.bincount(y, minlength=C) / y.size)
-                valid = ~np.isin(y, LCD.IGNORED_CLASSES_IDX)          # ignore no_data / clouds pixels
+                valid = ~np.isin(y, LCD.IGNORED_CLASSES_IDX)
                 cm += np.bincount(y[valid] * C + p.ravel()[valid], minlength=C * C).reshape(C, C)
     out = {'soft': np.concatenate(soft), 'argmax': np.concatenate(hard)}
     if mask_files is not None:
@@ -75,8 +59,6 @@ def predict(model, image_files, mask_files=None, batch_size=32, save_mask_dir=No
 
 
 def confusion_table(cm):
-    """Same table as the group's eval.py: rows = ground-truth classes (no_data/clouds removed),
-    columns = predicted classes + recall, precision, F1-score and IoU in %."""
     tp = np.diag(cm).astype(float)
     total_true, total_pred = cm.sum(axis=1), cm.sum(axis=0)
     div = lambda a, b: np.divide(a, b, out=np.zeros_like(a, dtype=float), where=b != 0)
@@ -97,13 +79,9 @@ def kl(df_true, df_pred):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--config', default=str(ROOT/'train_config.yaml'),
-                        help="train config giving dataset_folder and xp_rootdir")
-    parser.add_argument('--submission', action='store_true',
-                        help="also predict the official challenge test set (soft aggregation)")
-    parser.add_argument('--save-masks', action='store_true',
-                        help="also save the predicted masks (TIFF) and best_<set>_predicted.csv, "
-                             "the inputs of the group's eval.py")
+    parser.add_argument('--config', default=str(ROOT/'train_config.yaml'))
+    parser.add_argument('--submission', action='store_true')
+    parser.add_argument('--save-masks', action='store_true')
     parser.add_argument('--batch-size', type=int, default=32)
     args = parser.parse_args()
 
@@ -148,7 +126,6 @@ def main():
                 row[f'KL_{split}_{agg}'] = round(kl(df_true, df_pred), 5)
             if args.save_masks:
                 shutil.copy(xp/f'epoch{best}_{split}_soft_predicted.csv', xp/f'best_{split}_predicted.csv')
-            # pixel-wise metrics (group format)
             df_cm = confusion_table(res['cm'])
             df_cm.to_csv(xp/f'confusion_best_{split}.csv')
             mean = df_cm[METRIC_COLS].mean().rename('mean').rename_axis('metric')
@@ -175,7 +152,6 @@ def main():
         del model
         tf.keras.backend.clear_session()
 
-        # small result files -> results/<experiment>/ (no checkpoints, no masks)
         out = ROOT/'results'/xp.name
         shutil.rmtree(out, ignore_errors=True)
         out.mkdir(parents=True)

@@ -1,0 +1,3 @@
+experiment,best_epoch,epochs,KL_val_argmax,KL_val_soft,val_mean_Recall,val_mean_Precision,val_mean_F1-score,val_mean_IoU,KL_test_argmax,KL_test_soft,test_mean_Recall,test_mean_Precision,test_mean_F1-score,test_mean_IoU
+2026-11-24_15-12-34_deeplabv3plus,40,40,0.02458,0.00857,69.49,71.45,70.42,59.74,0.02706,0.00861,69.83,72.42,71.0,60.49
+2026-11-24_15-36-31_deeplabv3plus,35,40,0.01971,0.006,71.57,71.01,71.14,60.61,0.02023,0.00485,72.39,72.43,72.39,62.27
