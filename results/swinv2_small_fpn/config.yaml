@@ -1,0 +1,49 @@
+#
+# YAML configuration file for train.py
+#
+
+# the random seed, for reproducibility
+# if null, no random seed
+seed: 42
+# the model to train: 'unet' (benchmark, ~1M params) or 'swin' (pretrained backbone + FPN decoder)
+model: 'swin'
+# for model 'swin': any timm model name supporting features_only (ImageNet pretrained weights),
+# e.g. 'swinv2_tiny_window8_256', 'swinv2_small_window8_256', 'convnext_tiny'
+# or a Swin-v2 pretrained on Sentinel-2 by SatlasPretrain: 'satlas_swint_ms' (tiny), 'satlas_swinb_ms' (base)
+# pretrained weights are downloaded from Hugging Face at the first run
+backbone: 'swinv2_small_window8_256'
+# the size of each batch of images when training
+# careful not to use a too large batch size, might lead to OOM errors
+batch_size: 32
+# the number of epochs to train for
+epochs: 90
+# the (max) learning rate, with linear warmup then cosine decay
+# suggested: 1e-4 for 'swin', 1e-3 for 'unet'
+lr: 0.0001
+# AdamW weight decay, suggested: 0.05 for 'swin', 0.0 for 'unet'
+weight_decay: 0.05
+# class weights of the loss (same keys as the group's code): w(c) = freq(c)^-power,
+# normalized to an average pixel weight of 1, clipped to max_weight ("no_data" and "clouds" always 0)
+#   mode: 'uniform' (no re-balancing), 'benchmark' (inverse frequency) or 'power'
+class_weighting:
+  mode: 'uniform'
+  power: 0.5
+  max_weight: null
+# the prediction mode used to select the best checkpoint on the validation KL:
+# 'argmax' (count the most confident class of each pixel, benchmark) or 'soft' (average the probabilities)
+pred_mode: 'soft'
+# number of processes loading the data
+num_workers: 8
+# if not null, only use this number of training samples (and a quarter for validation), for quick tests
+debug_samples: null
+# the path to the root directory of the dataset
+dataset_folder: './dataset_UNZIPPED'
+# the path to the root directory used to store experiments
+# a directory per experiment will be created named with the datetime during execution
+xp_rootdir: './code/experiments'
+# group's standardized split of dataset_UNZIPPED/train (CSV files with a 'sample_id' column)
+train_image_path: './local_dataset/csv_files/train_images.csv'
+val_image_path: './local_dataset/csv_files/validation_images.csv'
+test_image_path: './local_dataset/csv_files/test_images.csv'
+# evaluate best.pt once on the internal test set at the end of the training (-> test_metrics.csv)
+evaluate_on_test: true

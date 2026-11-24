@@ -14,7 +14,7 @@ dataset_folder: './local_dataset'
 xp_rootdir: './code/experiments'
 # the name of log directory for an experiment (result of training)
 # you can set to 'last' to refer to the lastly created directory under in <xp_rootdir>
-xp_name: 'swinv2_tiny_patch4_windows16'
+xp_name: 'swinv2_small_patch4_windows8'
 # the set to perform inference on:
 #   'train', 'val' or 'test': the group's split (local_dataset/{train,validation,test}/images), to use with eval.py
 #   'final_test': the official test set of the challenge (no masks), gives the CSV to submit
