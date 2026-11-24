@@ -1,7 +1,6 @@
 #
 # YAML configuration file for infer.py
 #
- 
 # the random seed, for reproducibility
 # set to null for no random seed
 seed: 42
@@ -15,7 +14,7 @@ dataset_folder: './local_dataset'
 xp_rootdir: './code/experiments'
 # the name of log directory for an experiment (result of training)
 # you can set to 'last' to refer to the lastly created directory under in <xp_rootdir>
-xp_name: 'last'
+xp_name: '<dossier_de_l_expérience>'
 # the set to perform inference on:
 #   'train', 'val' or 'test': the group's split (local_dataset/{train,validation,test}/images), to use with eval.py
 #   'final_test': the official test set of the challenge (no masks), gives the CSV to submit
@@ -24,6 +23,11 @@ set: 'test'
 final_test_folder: './dataset_UNZIPPED/test'
 # the model checkpoint to use: 'best' (best validation KL, checkpoints/best.pt)
 checkpoint_epoch: 'best'
-# outputs in the experiment directory: <checkpoint>_<set>_predicted.csv, <checkpoint>_<set>_pred_masks/,
-# <checkpoint>_<set>_inference_timing.json (final_test: no masks, CSV to submit = best_final_test_predicted.csv)
- 
+# how the class proportions of an image are computed from the pixel predictions:
+#   'soft': mean of the predicted probabilities ("no_data" and "clouds" excluded), as val_kl_soft in train.py
+#   'argmax': proportions of the most confident class of each pixel (reference infer_tf.py / benchmark)
+# the predicted masks (for the confusion matrix) are always the argmax
+pred_mode: 'soft'
+# outputs in the experiment directory: <checkpoint>_<set>_predicted.csv (+ a copy <checkpoint>_<pred_mode>_<set>_predicted.csv),
+# <checkpoint>_<set>_pred_masks/, <checkpoint>_<set>_inference_timing.json
+# (final_test: no masks, CSV to submit = best_final_test_predicted.csv)

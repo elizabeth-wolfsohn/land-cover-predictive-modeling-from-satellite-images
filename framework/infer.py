@@ -16,13 +16,13 @@ import time
 import json
  
 from framework.dataset import LandCoverData as LCD
-from framework.dataset import LandCoverDataset, input_normalization
+from framework.dataset import LandCoverDataset, input_normalization, predict_distribution
 from framework.model import build_model
 from framework.utils import YamlNamespace
  
  
 @torch.no_grad()
-def predict_as_vectors(model, loader, files, pred_mask_dir, device):
+def predict_as_vectors(model, loader, files, pred_mask_dir, device, pred_mode='argmax'):
     """Forward pass over the dataset: saves the predicted masks and returns class proportions.
     Args:
         model (torch.nn.Module): model, in eval mode
@@ -31,6 +31,9 @@ def predict_as_vectors(model, loader, files, pred_mask_dir, device):
         pred_mask_dir (Path or None): directory where predicted masks are saved as <stem>.tif
             (None: masks not saved, for the official test set)
         device (torch.device): device of the model
+        pred_mode (str): 'argmax' (reference: proportions of the argmax classes of the pixels) or
+            'soft' (mean over the pixels of the probabilities, "no_data" and "clouds" excluded,
+            as val_kl_soft in train.py). The saved masks are always the argmax over the 10 classes.
     Returns:
         (numpy.ndarray): predicted class distribution vectors for the dataset
         (list[tuple]): (duration in s, batch size) of each batch
@@ -49,6 +52,8 @@ def predict_as_vectors(model, loader, files, pred_mask_dir, device):
         with torch.autocast(device.type, dtype=torch.bfloat16, enabled=device.type == 'cuda'):
             pred_raster = model(image.to(device))
         pred_mask = pred_raster.float().argmax(1).cpu()  # (bs, 256, 256), argmax over the 10 classes
+        if pred_mode == 'soft':
+            soft = predict_distribution(pred_raster, 'soft').double().cpu().numpy()  # (bs, 10)
         dt = time.perf_counter() - t0  # .cpu() waits for the GPU
  
         (batch_size, num_classes, _, _) = tuple(pred_raster.shape)
@@ -61,9 +66,12 @@ def predict_as_vectors(model, loader, files, pred_mask_dir, device):
                 imwrite(pred_mask_dir / f"{f.stem}.tif", m)
         idx += batch_size
  
-        # bincount for each sample
-        counts = np.stack([np.bincount(m.ravel(), minlength=num_classes) for m in masks_np])
-        predictions.append(counts / counts.sum(-1, keepdims=True))
+        if pred_mode == 'soft':
+            predictions.append(soft)
+        else:
+            # bincount for each sample
+            counts = np.stack([np.bincount(m.ravel(), minlength=num_classes) for m in masks_np])
+            predictions.append(counts / counts.sum(-1, keepdims=True))
  
     predictions = np.concatenate(predictions, 0)
     return predictions, batch_times
@@ -98,6 +106,9 @@ def _parse_args():
         assert (config.final_test_folder/'images').is_dir(), config.final_test_folder/'images'
     # only the best checkpoint is saved by train.py
     assert str(config.checkpoint_epoch) == 'best', "checkpoint_epoch: only 'best' is supported"
+    # 'argmax' (reference infer_tf.py) if not given
+    config.pred_mode = getattr(config, 'pred_mode', 'argmax')
+    assert config.pred_mode in ('argmax', 'soft')
  
     return config
  
@@ -179,9 +190,11 @@ if __name__ == '__main__':
         files=test_files,
         pred_mask_dir=pred_mask_dir,
         device=device,
+        pred_mode=config.pred_mode,
     )
  
     stats = summarize_timings(batch_times, warmup=1)
+    stats['pred_mode'] = config.pred_mode
     print("Inference timing:")
     for k, v in stats.items():
         print(f"  {k}: {v}")
@@ -194,7 +207,10 @@ if __name__ == '__main__':
     if config.set == 'final_test':
         # submission: rows in increasing sample_id order (sorted() above is in text order: 10 < 2)
         df_y_pred = df_y_pred.sort_index()
-    out_csv = config.xp_dir / f'{tag}_{config.set}_predicted.csv'
-    print(f"Saving prediction CSV to file {out_csv}")
-    df_y_pred.to_csv(out_csv, index=True, index_label='sample_id')
+    # <tag>_<set>_predicted.csv is the file read by eval.py (and the one to submit for final_test),
+    # the copy <tag>_<pred_mode>_<set>_predicted.csv keeps track of the aggregation mode
+    for out_csv in (config.xp_dir / f'{tag}_{config.set}_predicted.csv',
+                    config.xp_dir / f'{tag}_{config.pred_mode}_{config.set}_predicted.csv'):
+        print(f"Saving prediction CSV ({config.pred_mode}) to file {out_csv}")
+        df_y_pred.to_csv(out_csv, index=True, index_label='sample_id')
  
