@@ -45,10 +45,9 @@ def extract_features(img: np.ndarray) -> np.ndarray:
 
 
 
-
-def balance_pixels(X, y, max_per_class=200_000, seed=42):
-    """Remplace class_weight='balanced_subsample' (non supporté par cuML) :
-    sous-échantillonne les classes majoritaires."""
+def balance_pixels(X, y, max_per_class=500, seed=42):
+    if max_per_class is None:
+        return X, y
     rng = np.random.default_rng(seed)
     idx = []
     for c in np.unique(y):
@@ -58,23 +57,34 @@ def balance_pixels(X, y, max_per_class=200_000, seed=42):
         idx.append(ci)
     idx = np.concatenate(idx)
     rng.shuffle(idx)
-    return X[idx], y[idx] 
+    return X[idx], y[idx]
 
 
 
 class LandCoverRF:
     def __init__(
-        self,
-        backend='gpu',               # 'gpu' (cuML) ou 'cpu' (scikit-learn)
-        n_estimators=50,
-        max_depth=25,
-        min_samples_leaf=5,
-        class_weight='balanced_subsample',   # CPU uniquement
-        max_features='sqrt',
-        n_jobs=2,                            # CPU uniquement
-        random_state=42,
-    ):
+    self,
+    backend,
+    n_estimators,
+    max_depth,
+    min_samples_leaf,
+    class_weight,
+    max_features,
+    n_jobs,
+    random_state,
+    max_per_class,
+    n_bins,
+        ):
+        if backend not in ('gpu', 'cpu'):
+            raise ValueError(f"backend doit être 'gpu' ou 'cpu', reçu : {backend!r}")
+        if max_per_class is not None and max_per_class <= 0:
+            raise ValueError("max_per_class doit être > 0 ou None.")
+
         self.backend = backend
+        self.random_state = random_state
+        self.max_per_class = max_per_class
+        self.n_bins = n_bins
+
         if backend == 'gpu':
             from cuml.ensemble import RandomForestClassifier as cuRF
             self.model = cuRF(
@@ -82,7 +92,7 @@ class LandCoverRF:
                 max_depth=max_depth,
                 min_samples_leaf=min_samples_leaf,
                 max_features=max_features,
-                n_bins=128,
+                n_bins=n_bins,                 # <- plus de 128 en dur
                 random_state=random_state,
                 output_type='numpy',
                 verbose=2,
@@ -100,11 +110,16 @@ class LandCoverRF:
             )
 
     def fit(self, X, y):
-        self.classes_, y_idx = np.unique(y, return_inverse=True)   # classes_ = [2..9]
-        if self.backend == 'gpu':
-            X, y_idx = balance_pixels(X, y_idx)
-            X = np.ascontiguousarray(X, dtype=np.float32)
-            y_idx = np.ascontiguousarray(y_idx, dtype=np.int32)
+        self.classes_, y_idx = np.unique(y, return_inverse=True)
+        #if self.backend == 'gpu':
+            # X, y_idx = balance_pixels(
+            #     X, y_idx,
+            #     max_per_class=self.max_per_class,
+            #     seed=self.random_state,
+            # )
+            # print(f'Après équilibrage : {np.bincount(y_idx)}')
+            # X = np.ascontiguousarray(X, dtype=np.float32)
+            # y_idx = np.ascontiguousarray(y_idx, dtype=np.int32)
         self.model.fit(X, y_idx)
         return self
 
@@ -116,14 +131,20 @@ class LandCoverRF:
         return self.classes_[pred_idx].reshape(h, w).astype(np.int64)
 
     def save(self, path):
-        joblib.dump({'backend': self.backend, 'model': self.model,
-                    'classes_': self.classes_}, path, compress=3)
+        joblib.dump({
+            'backend': self.backend, 'model': self.model, 'classes_': self.classes_,
+            'random_state': self.random_state,
+            'max_per_class': self.max_per_class, 'n_bins': self.n_bins,
+        }, path, compress=3)
 
     @classmethod
     def load(cls, path):
         data = joblib.load(path)
         obj = cls.__new__(cls)
         obj.backend, obj.model, obj.classes_ = data['backend'], data['model'], data['classes_']
+        obj.random_state = data['random_state']
+        obj.max_per_class = data['max_per_class']
+        obj.n_bins = data['n_bins']
         if obj.backend == 'cpu':
             obj.model.verbose = 0
         return obj

@@ -4,7 +4,6 @@
 from pathlib import Path
 import argparse
 import datetime
-import random
 import time
 
 import numpy as np
@@ -124,23 +123,40 @@ if __name__ == '__main__':
         cfg = yaml.safe_load(f)
 
     # --- Configuration parameters ---
+    REQUIRED_KEYS = [
+        'dataset_folder', 'xp_rootdir', 'backend', 'seed',
+        'n_per_image', 'max_images',
+        'n_estimators', 'max_depth', 'min_samples_leaf', 'max_features',
+        'class_weight', 'n_jobs',        # CPU uniquement
+        'max_per_class', 'n_bins',       # GPU uniquement
+    ]
+    missing = [k for k in REQUIRED_KEYS if k not in cfg]
+    if missing:
+        raise KeyError(f"Clés manquantes dans {args.config} : {missing}")
+
     dataset_folder = Path(cfg['dataset_folder']).expanduser()
     xp_rootdir = Path(cfg['xp_rootdir']).expanduser()
 
-    n_per_image = cfg.get('n_per_image', 200)
-    n_estimators = cfg.get('n_estimators', 50)
-    max_depth = cfg.get('max_depth', 25)
-    min_samples_leaf = cfg.get('min_samples_leaf', 5)
-    max_images = cfg.get('max_images')
-    n_jobs = cfg.get('n_jobs', 2)
-    seed = cfg.get('seed', 42)
-    class_weight= cfg.get('class_weight', 'balanced_subsample') 
-    max_features= cfg.get('max_features', 'sqrt') 
+    backend = cfg['backend']
+    seed = cfg['seed']
+
+    n_per_image = cfg['n_per_image']
+    max_images = cfg['max_images']            # null = toutes les images
+
+    n_estimators = cfg['n_estimators']
+    max_depth = cfg['max_depth']
+    min_samples_leaf = cfg['min_samples_leaf']
+    max_features = cfg['max_features']
+
+    class_weight = cfg['class_weight']        # CPU uniquement
+    n_jobs = cfg['n_jobs']                    # CPU uniquement
+
+    max_per_class = cfg['max_per_class']      # GPU uniquement, null = pas de plafond
+    n_bins = cfg['n_bins']                    # GPU uniquement
 
 
     print(f'Configuration: {cfg}')
 
-    random.seed(seed)
     rng = np.random.default_rng(seed)
 
     # --- Load training images ---
@@ -218,8 +234,9 @@ if __name__ == '__main__':
     max_features=max_features,
     n_jobs=n_jobs,
     random_state=seed,
+    max_per_class=max_per_class,
+    n_bins=n_bins,
 )
-
     rf.fit(X, y)
 
     print(f'Fit: {time.perf_counter() - t0:.0f}s')
