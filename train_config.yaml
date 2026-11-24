@@ -11,7 +11,7 @@ model: 'swin'
 # e.g. 'swinv2_tiny_window8_256', 'swinv2_small_window8_256', 'convnext_tiny'
 # or a Swin-v2 pretrained on Sentinel-2 by SatlasPretrain: 'satlas_swint_ms' (tiny), 'satlas_swinb_ms' (base)
 # pretrained weights are downloaded from Hugging Face at the first run
-backbone: 'swinv2_tiny_window16_256'
+backbone: 'swinv2_small_window8_256'
 # the size of each batch of images when training
 # careful not to use a too large batch size, might lead to OOM errors
 batch_size: 32
