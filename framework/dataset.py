@@ -1,9 +1,11 @@
 """
 Classes and functions to handle data
+(PyTorch port of dataset_tf.py, which is the reference)
 """
 from pathlib import Path
 from collections import OrderedDict
 import numpy as np
+import pandas as pd
 import torch
 from tifffile import imread
 
@@ -35,10 +37,11 @@ class LandCoverData():
     # is not a proper land cover type and images and masks do not exactly match in time.
     IGNORED_CLASSES_IDX = [0, 1]
 
-    # The training dataset contains 18491 images and masks
-    # The test dataset contains 5043 images and masks
-    TRAINSET_SIZE = 18491
-    TESTSET_SIZE = 5043
+    # The original training dataset (18491 images and masks) is split into
+    # train / validation / test (train_images.csv, validation_images.csv, test_images.csv)
+    TRAINSET_SIZE = 14794  # 18491 initially
+    VALSET_SIZE = 1848
+    TESTSET_SIZE = 1849  # 5043 initially
 
     # for visualization of the masks: classes indices and RGB colors
     CLASSES_COLORPALETTE = {
@@ -58,70 +61,86 @@ class LandCoverData():
     # statistics
     # the pixel class counts in the training set
     TRAIN_CLASS_COUNTS = np.array(
-        [0, 20643, 60971025, 404760981, 277012377, 96473046, 333407133, 9775295, 1071, 29404605]
+        [0, 17441, 48775625, 323881666, 222414642, 76948228, 265937117, 7749139, 828, 23814898]
+        # [0, 20643, 60971025, 404760981, 277012377, 96473046, 333407133, 9775295, 1071, 29404605] #initially
     )
+    # the pixel class counts in the validation set
+    VAL_CLASS_COUNTS = np.array(
+        [0, 1249, 6258733, 40140226, 27516024, 10176292, 33510997, 1030736, 23, 2476248]
+    )
+
     # the minimum and maximum value of image pixels in the training set
     TRAIN_PIXELS_MIN = 1
     TRAIN_PIXELS_MAX = 24356
-    # the .tif files store the bands as B,G,R,NIR: reorder them as R,G,B,NIR when loading,
-    # to match the RGB order of ImageNet pretrained weights
-    CHANNEL_ORDER = [2, 1, 0, 3]
-    # per-channel (R,G,B,NIR) mean and std of image pixels (computed on 1000 random training images)
-    CHANNEL_MEAN = np.array([651.4, 695.4, 411.2, 3282.4], dtype='float32')
-    CHANNEL_STD = np.array([592.8, 427.0, 367.1, 1006.5], dtype='float32')
-    # SatlasPretrain inputs: L1C TCI / 255 for R,G,B (TCI saturates at 3558) and B08 / 8160
-    SATLAS_SCALE = np.array([3558., 3558., 3558., 8160.], dtype='float32')
+
+
+def files_from_csv(csv_path, images_dir):
+    """List of image paths `<images_dir>/<sample_id>.tif` from a split csv
+    (train_images.csv, validation_images.csv, test_images.csv, or a *_labels.csv)."""
+    ids = pd.read_csv(csv_path)['sample_id']
+    return [Path(images_dir)/f'{i}.tif' for i in ids]
 
 
 def input_normalization(config):
-    """(mean, std) used to normalize the images for the model of a train config."""
-    if config.model == 'swin' and config.backbone.startswith('satlas'):
-        # ponytail: no clipping to [0, 1] like Satlas, bright clouds/snow pixels go above 1
-        return np.zeros(4, dtype='float32'), LandCoverData.SATLAS_SCALE
-    return LandCoverData.CHANNEL_MEAN, LandCoverData.CHANNEL_STD
+    """(mean, std) used to normalize the images: as in the reference, every model uses
+    image / TRAIN_PIXELS_MAX (kept to not break the train script, config is ignored)."""
+    return (np.zeros(LandCoverData.N_CHANNELS, dtype='float32'),
+            np.full(LandCoverData.N_CHANNELS, LandCoverData.TRAIN_PIXELS_MAX, dtype='float32'))
 
 
 class LandCoverDataset(torch.utils.data.Dataset):
-    """Images (and masks) from a list of `<root>/images/<id>.tif` files.
-    Returns (image[4,256,256] float32 normalized R,G,B,NIR, mask[256,256] int64) or the image only.
-    norm: (mean, std) of the normalization, per-channel standardization by default.
+    """Images (and masks) from a list of `<root>/images/<id>.tif` files, as in dataset_tf.py:
+    channels in the .tif order, image / TRAIN_PIXELS_MAX, random flip then random 90° rotation.
+    Returns (image[4,256,256] float32, mask[256,256,1] uint8) or the image only.
+    norm: (mean, std) of the normalization, (0, TRAIN_PIXELS_MAX) like the reference by default.
     """
-    def __init__(self, files, augment=False, with_mask=True,
-                 norm=(LandCoverData.CHANNEL_MEAN, LandCoverData.CHANNEL_STD)):
+    def __init__(self, files, augment=False, with_mask=True, norm=None):
         self.files, self.augment, self.with_mask = list(files), augment, with_mask
-        self.mean, self.std = norm
+        self.mean, self.std = input_normalization(None) if norm is None else norm
 
     def __len__(self):
         return len(self.files)
 
     def __getitem__(self, idx):
+        # numpy_parse_image: image (256, 256, 4) uint16, mask (256, 256, 1) uint8
         image_path = Path(self.files[idx])
-        image = imread(image_path)[..., LandCoverData.CHANNEL_ORDER].astype('float32')
-        image = (image - self.mean) / self.std
-        image = image.transpose(2, 0, 1)  # (C, H, W)
+        image = imread(image_path).astype('uint16')
         if not self.with_mask:
-            return torch.from_numpy(np.ascontiguousarray(image))
+            image = self._normalize(image)
+            return torch.from_numpy(np.ascontiguousarray(image.transpose(2, 0, 1)))
         # the mask is at masks/<image_id>.tif next to images/<image_id>.tif
-        mask = imread(image_path.parent.parent/'masks'/image_path.name).astype('int64')
+        mask = imread(image_path.parent.parent/'masks'/image_path.name).astype('uint8')
+        mask = mask[..., None]
         if self.augment:
-            # random flips and 90 degrees rotations (the 8 dihedral transforms)
-            k = np.random.randint(4)
-            image, mask = np.rot90(image, k, (1, 2)), np.rot90(mask, k)
+            # load_image_train: random left-right flip, then rotation by k*90° counter-clockwise
+            # (tf.image.flip_left_right / tf.image.rot90 on (H, W, C) arrays)
             if np.random.rand() > 0.5:
-                image, mask = image[:, :, ::-1], mask[:, ::-1]
+                image, mask = image[:, ::-1], mask[:, ::-1]
+            k = np.random.randint(4)
+            image, mask = np.rot90(image, k, (0, 1)), np.rot90(mask, k, (0, 1))
+        image = self._normalize(image)
+        image = image.transpose(2, 0, 1)  # (H, W, C) -> (C, H, W) for PyTorch
         return torch.from_numpy(np.ascontiguousarray(image)), torch.from_numpy(np.ascontiguousarray(mask))
+
+    def _normalize(self, image):
+        """normalize: rescale the pixel values of the images (cast to float32 / TRAIN_PIXELS_MAX).
+        Inside a tf.function, Grappler rewrites `x / c` into `x * (1/c)` (float32): multiplying by
+        the float32 inverse gives bit-identical values (a true division differs by 1 ulp)."""
+        inv_std = np.float32(1) / np.asarray(self.std, dtype='float32')
+        return (image.astype('float32') - self.mean) * inv_std
 
 
 def class_distribution(x, n_classes=LandCoverData.N_CLASSES):
     """Per-image class distribution vectors.
     Args:
-        x (torch.Tensor): masks (B, H, W) of class indices, or probabilities (B, C, H, W)
+        x (torch.Tensor): integer masks (B, H, W) or (B, H, W, 1) of class indices,
+            or float probabilities (B, C, H, W)
     Returns:
         (torch.Tensor): (B, n_classes) vectors summing to 1
     """
-    if x.ndim == 4:
+    if x.is_floating_point():
         return x.float().mean((2, 3))
-    counts = torch.stack([torch.bincount(m.flatten(), minlength=n_classes) for m in x])
+    counts = torch.stack([torch.bincount(m.flatten().long(), minlength=n_classes) for m in x])
     return counts.float() / counts.sum(1, keepdim=True)
 
 

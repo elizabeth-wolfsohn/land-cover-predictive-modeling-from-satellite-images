@@ -89,6 +89,7 @@ def evaluate(model, loader, loss_fn, device, autocast):
     ignored = torch.tensor(LCD.IGNORED_CLASSES_IDX, device=device)
     for image, mask in tqdm(loader, desc='val', leave=False):
         image, mask = image.to(device), mask.to(device)
+        mask = mask.squeeze(-1).long()
         with autocast():
             logits = model(image)
         total_loss += loss_fn(logits.float(), mask).item() * len(image)
@@ -181,6 +182,7 @@ if __name__ == '__main__':
 
     # keep a few validation samples for visualization
     plot_images, plot_masks = next(iter(DataLoader(val_loader.dataset, batch_size=5)))
+    plot_masks = plot_masks.squeeze(-1)
 
     model = build_model(config).to(device)
     print(f"Model {config.model}: {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M parameters")
@@ -202,6 +204,7 @@ if __name__ == '__main__':
         ignored = torch.tensor(LCD.IGNORED_CLASSES_IDX, device=device)
         for image, mask in tqdm(train_loader, desc=f'epoch {epoch}/{config.epochs}'):
             image, mask = image.to(device, non_blocking=True), mask.to(device, non_blocking=True)
+            mask = mask.squeeze(-1).long()
             with autocast():
                 logits = model(image)
             loss = loss_fn(logits.float(), mask)

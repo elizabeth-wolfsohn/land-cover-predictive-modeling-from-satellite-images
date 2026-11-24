@@ -1,7 +1,7 @@
 #
 # YAML configuration file for infer.py
 #
-
+ 
 # the random seed, for reproducibility
 # set to null for no random seed
 seed: 42
@@ -9,22 +9,21 @@ seed: 42
 batch_size: 32
 # number of processes loading the data
 num_workers: 8
-# the path to the root folder of the dataset
-dataset_folder: './dataset_UNZIPPED'
+# the path to the root folder of the dataset (group's layout: <set>/images, <set>/masks, csv_files/)
+dataset_folder: './local_dataset'
 # the path to the root directory used to store experiments
 xp_rootdir: './code/experiments'
 # the name of log directory for an experiment (result of training)
 # you can set to 'last' to refer to the lastly created directory under in <xp_rootdir>
 xp_name: 'last'
 # the set to perform inference on:
-#   'final_test': the official test set of the challenge (dataset_UNZIPPED/test), the CSV to submit
-#   'train', 'val', 'test': the group's internal split, read from <set>_samples.csv in the experiment
-#   (ground truth in local_dataset/csv_files/*_labels.csv, also saved to '<set>_true.csv')
+#   'train', 'val' or 'test': the group's split (local_dataset/{train,validation,test}/images), to use with eval.py
+#   'final_test': the official test set of the challenge (no masks), gives the CSV to submit
 set: 'test'
-# the model checkpoint to use: 'best' (best validation KL) or 'last'
-checkpoint: 'best'
-# 'argmax' (count the most confident class of each pixel) or 'soft' (average the probabilities)
-pred_mode: 'soft'
-# test-time augmentation: 'none', 'flip' (2 passes) or 'd4' (the 8 rotations / flips, 8 passes)
-tta: 'none'
-# the output prediction will be saved to '<checkpoint>_<pred_mode>[_tta-<tta>]_<set>_predicted.csv' in the experiment directory
+# folder of the official test set (containing images/), only used with set: 'final_test'
+final_test_folder: './dataset_UNZIPPED/test'
+# the model checkpoint to use: 'best' (best validation KL, checkpoints/best.pt)
+checkpoint_epoch: 'best'
+# outputs in the experiment directory: <checkpoint>_<set>_predicted.csv, <checkpoint>_<set>_pred_masks/,
+# <checkpoint>_<set>_inference_timing.json (final_test: no masks, CSV to submit = best_final_test_predicted.csv)
+ 
