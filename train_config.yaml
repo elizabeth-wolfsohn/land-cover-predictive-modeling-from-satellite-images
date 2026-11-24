@@ -12,7 +12,7 @@ batch_size: 32
 # the number of epochs to train for
 epochs: 90
 # the learning rate
-lr: 0.002
+lr: 0.001
 # the path to the root directory of the dataset
 dataset_folder: './challenge-ens/data/dataset_UNZIPPED'
 # the path to the root directory used to store experiments
@@ -79,15 +79,15 @@ augmentation:
     min_scale: 0.6      # the crop side is in [min_scale, 1] x image side
   brightness:
     prob: 0.5
-    range: [0.9, 1.1]
+    range: [0.8, 1.2]
   contrast:
     prob: 0.5
-    range: [0.85, 1.15]
+    range: [0.7, 1.3]
   color:                # one random gain per band (R, G, B, NIR)
     prob: 0.5
-    range: [0.93, 1.07]
+    range: [0.85, 1.15]
   noise:
-    prob: 0.1
+    prob: 0.2
     std: 0.02           # relative to the mean of each band
 
 # --- Spectral indices appended as extra input channels (train, validation, inference) ---
@@ -113,4 +113,4 @@ class_weighting:
 loss:
   type: ce_kl   
   ce_weight: 1.0
-  kl_weight: 5.0
+  kl_weight: 10.0

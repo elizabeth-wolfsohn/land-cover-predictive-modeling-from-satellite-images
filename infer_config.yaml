@@ -14,10 +14,10 @@ dataset_folder: './challenge-ens/data/dataset_UNZIPPED'
 xp_rootdir: './challenge-ens/code/experiments'
 # the name of log directory for an experiment (result of training)
 # you can set to 'last' to refer to the lastly created directory under in <xp_rootdir>
-xp_name: '21-11-2026_16:15:13'
+xp_name: '23-11-2026_19:55:59'
 # the set to perform inference on: 'train', 'test' or 'val'
 # note: 'train' mean all train samples with the ones in validation excluded, and 'val' mean the ones in validation
-set: 'test'
+set: 'final_test'
 # the output prediction for the set will be saved to a file 'epoch<checkpoint_epoch>_<set>_predicted.csv' in the experiment directory
 # the epoch number for the model checkpoint to load and perform prediction with
 checkpoint_epoch: 90
@@ -25,6 +25,6 @@ checkpoint_epoch: 90
 # OPTIONAL (framework/inference_utils.py): remove this section to use the benchmark prediction
 prediction:
   # 'argmax': proportions of the argmax mask (benchmark), 'softmax': mean pixel probabilities
-  vector_mode: 'argmax'
+  vector_mode: 'softmax'
   # test-time augmentation: 'none', 'flip' (2 passes) or 'd4' (8 passes)
   tta: 'none'

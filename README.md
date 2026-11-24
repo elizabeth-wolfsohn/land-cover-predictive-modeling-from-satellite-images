@@ -81,18 +81,15 @@ ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv -
 ```
 Examples:
 * Evaluate on training set:
-challenge-ens/code/experiments/
+
 ```
-ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv --pred-file challenge-ens/code/experiments/21-11-2026_16:15:13/epoch90_test_predicted.csv --out-csv challenge-ens/code/experiments/21-11-2026_16:15:13/epoch90_test_score.csv
+ipython framework/eval.py -- --gt-file local_dataset/csv_files/test_labels.csv --pred-file challenge-ens/code/experiments/21-11-2026_12:20:07/epoch90_test_predicted.csv --out-csv challenge-ens/code/experiments/21-11-2026_12:20:07/epoch90_test_score.csv
 ```
 where ../data/dataset_csvs/train_labels.csv is where is stored the *y_train* file of the challenge.
 
 * Evaluate on validation set:
 ```
-ipython framework/eval.py -- \
-  --gt-file challenge-ens/data/dataset_csvs/train_labels.csv \
-  --pred-file challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_predicted.csv \
-  --out-csv challenge-ens/code/experiments/08-11-2026_18:11:33/epoch19_val_score.csv
+ipython framework/eval.py -- --gt-file dataset/test/test_labels.csv --pred-file challenge-ens/code/experiments/21-11-2026_12:20:07/epoch90_final_test_predicted.csv --out-csv challenge-ens/code/experiments/21-11-2026_12:20:07/epoch90_final_test_score.csv
 ```
 
 ### Optional preprocessing
