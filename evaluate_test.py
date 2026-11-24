@@ -1,23 +1,25 @@
 """
-Evaluate every trained experiment on the held-out test split of the group.
+Evaluate every trained experiment on the validation and held-out test sets of the group split.
 
 For each experiment of experiments/ trained with the predefined split (test_samples.csv present):
   1. pick the best epoch on the VALIDATION set (lowest val_kl), never on the test set
-  2. predict the validation and test images with the 'argmax' and 'soft' aggregations
-  3. compute the challenge metric (KL divergence) against the ground truth
-  4. optionally predict the official challenge test set (CSV to submit on the website)
-  5. copy the small result files (logs, curves, predictions, CSV, no checkpoints) to results/<experiment>/
+  2. predict the validation and test images once, and compute:
+       - the challenge metric (KL divergence) with the 'argmax' and 'soft' aggregations
+       - the pixel-wise confusion matrix with recall, precision, F1-score and IoU per class
+         (same definitions and output files as the group's framework/eval.py, branch elizabeth)
+  3. optionally predict the official challenge test set (CSV to submit on the website)
+  4. copy the small result files (logs, curves, metrics, CSV, no checkpoints) to results/<experiment>/
 
 A summary table is printed and saved to results/summary_test_split.csv.
 
-Usage (from the repo root, after the trainings):
+Usage (from the repo root, after the trainings; TF_USE_LEGACY_KERAS=1 with TensorFlow >= 2.16):
     python evaluate_test.py
-    python evaluate_test.py --submission       # also predicts the official test set
+    python evaluate_test.py --submission     # also predicts the official challenge test set
+    python evaluate_test.py --save-masks     # also writes the files expected by the group's eval.py
 """
 import sys
 import shutil
 import argparse
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -27,40 +29,90 @@ import yaml
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
+from framework.dataset import LandCoverData as LCD  # noqa: E402
+from framework.eval import epsilon_kl_divergence  # noqa: E402
 
-def run(cmd):
-    r = subprocess.run([sys.executable, '-m'] + cmd, cwd=ROOT, capture_output=True, text=True)
-    if r.returncode != 0:
-        print(r.stdout[-2000:], r.stderr[-3000:])
-        raise RuntimeError(f"command failed: {' '.join(cmd)}")
-    return r.stdout
+IGNORED = [LCD.CLASSES[i] for i in LCD.IGNORED_CLASSES_IDX]
+METRIC_COLS = ["Recall (%)", "Precision (%)", "F1-score (%)", "IoU (%)"]
 
 
-def kl_score(gt_csv, pred_csv):
-    out = run(['framework.eval', '-g', str(gt_csv), '-p', str(pred_csv)])
-    return float(out.strip().splitlines()[-1])
+def load_tif(path):
+    from tifffile import imread
+    return imread(str(path))
+
+
+def predict(model, image_files, mask_files=None, batch_size=32, save_mask_dir=None):
+    """Predict a list of images.
+    Returns the soft and argmax class proportions (N x C) and, if masks are given,
+    the ground-truth proportions and the pixel-wise confusion matrix (C x C)."""
+    C = LCD.N_CLASSES
+    soft, hard, true = [], [], []
+    cm = np.zeros((C, C), dtype=np.int64)
+    if save_mask_dir is not None:
+        from tifffile import imwrite
+        save_mask_dir.mkdir(parents=True, exist_ok=True)
+    for start in range(0, len(image_files), batch_size):
+        files = image_files[start:start + batch_size]
+        x = np.stack([load_tif(f) for f in files]).astype(np.float32) / LCD.TRAIN_PIXELS_MAX
+        probs = np.asarray(model.predict_on_batch(x), dtype=np.float64)       # (B, H, W, C)
+        pred = probs.argmax(-1)                                               # (B, H, W)
+        soft.append(probs.mean(axis=(1, 2)))
+        hard.append(np.stack([np.bincount(p.ravel(), minlength=C) / p.size for p in pred]))
+        if save_mask_dir is not None:
+            for f, p in zip(files, pred):
+                imwrite(str(save_mask_dir/Path(f).name), p.astype(np.uint8))
+        if mask_files is not None:
+            for p, mf in zip(pred, mask_files[start:start + batch_size]):
+                y = load_tif(mf).ravel().astype(np.int64)
+                true.append(np.bincount(y, minlength=C) / y.size)
+                valid = ~np.isin(y, LCD.IGNORED_CLASSES_IDX)          # ignore no_data / clouds pixels
+                cm += np.bincount(y[valid] * C + p.ravel()[valid], minlength=C * C).reshape(C, C)
+    out = {'soft': np.concatenate(soft), 'argmax': np.concatenate(hard)}
+    if mask_files is not None:
+        out['true'] = np.stack(true)
+        out['cm'] = cm
+    return out
+
+
+def confusion_table(cm):
+    """Same table as the group's eval.py: rows = ground-truth classes (no_data/clouds removed),
+    columns = predicted classes + recall, precision, F1-score and IoU in %."""
+    tp = np.diag(cm).astype(float)
+    total_true, total_pred = cm.sum(axis=1), cm.sum(axis=0)
+    div = lambda a, b: np.divide(a, b, out=np.zeros_like(a, dtype=float), where=b != 0)
+    recall, precision = div(tp, total_true), div(tp, total_pred)
+    f1 = div(2 * precision * recall, precision + recall)
+    iou = div(tp, total_true + total_pred - tp)
+    df = pd.DataFrame(cm, index=LCD.CLASSES, columns=LCD.CLASSES).iloc[2:, :]
+    df.index.name = "Ground Truth Class"
+    df["Recall (%)"], df["Precision (%)"] = recall[2:] * 100, precision[2:] * 100
+    df["F1-score (%)"], df["IoU (%)"] = f1[2:] * 100, iou[2:] * 100
+    return df
+
+
+def kl(df_true, df_pred):
+    return epsilon_kl_divergence(df_true.drop(columns=IGNORED).to_numpy(dtype=np.float64, copy=True),
+                                 df_pred.drop(columns=IGNORED).to_numpy(dtype=np.float64, copy=True))
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', default=str(ROOT/'train_config.yaml'),
-                        help="train config giving dataset_folder, xp_rootdir and the split CSV files")
+                        help="train config giving dataset_folder and xp_rootdir")
     parser.add_argument('--submission', action='store_true',
                         help="also predict the official challenge test set (soft aggregation)")
+    parser.add_argument('--save-masks', action='store_true',
+                        help="also save the predicted masks (TIFF) and best_<set>_predicted.csv, "
+                             "the inputs of the group's eval.py")
     parser.add_argument('--batch-size', type=int, default=32)
     args = parser.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
     dataset = (ROOT/Path(cfg['dataset_folder']).expanduser()).resolve()
     xp_root = (ROOT/Path(cfg['xp_rootdir']).expanduser()).resolve()
-    test_labels = (ROOT/Path(cfg.get('test_image_path') or 'local_dataset/csv_files/test_images.csv')
-                   .expanduser()).resolve()
-    test_labels = test_labels.with_name(test_labels.name.replace('_images', '_labels'))
-    assert test_labels.is_file(), f"test labels not found: {test_labels}"
     assert dataset.is_dir(), f"dataset_folder not found: {dataset}"
 
-    from framework.dataset import LandCoverData as LCD
-    from tifffile import imread
+    import tensorflow as tf
 
     rows = []
     for xp in sorted(d for d in xp_root.iterdir() if d.is_dir()):
@@ -73,41 +125,57 @@ def main():
             print(f"skip {xp.name} (no val_kl in the logs)")
             continue
         best = int(logs['val_kl'].idxmin()) + 1
-        if not (xp/'checkpoints'/f'epoch{best}').exists():
+        ckpt = xp/'checkpoints'/f'epoch{best}'
+        if not ckpt.exists():
             print(f"skip {xp.name} (checkpoint of epoch {best} missing)")
             continue
         print(f"\n=== {xp.name}: best epoch on validation = {best}/{len(logs)}")
-
-        # ground truth of the validation set (from the masks)
-        val_ids = pd.read_csv(xp/'val_samples.csv').squeeze('columns').tolist()
-        y_val = [np.bincount(imread(dataset/'train'/'masks'/f'{i}.tif').ravel(), minlength=LCD.N_CLASSES)
-                 / (LCD.IMG_SIZE * LCD.IMG_SIZE) for i in val_ids]
-        pd.DataFrame(y_val, index=pd.Index(val_ids, name='sample_id'), columns=LCD.CLASSES)\
-            .to_csv(xp/'y_val.csv')
+        model = tf.keras.models.load_model(str(ckpt), compile=False)
 
         row = {'experiment': xp.name, 'best_epoch': best, 'epochs': len(logs)}
-        splits = [('val', xp/'y_val.csv'), ('test_split', test_labels)]
-        for split, gt in splits:
+        for split, csv_name in (('val', 'val_samples.csv'), ('test', 'test_samples.csv')):
+            ids = pd.read_csv(xp/csv_name).squeeze('columns').tolist()
+            images = [dataset/'train'/'images'/f'{i}.tif' for i in ids]
+            masks = [dataset/'train'/'masks'/f'{i}.tif' for i in ids]
+            res = predict(model, images, masks, args.batch_size,
+                          save_mask_dir=xp/f'best_{split}_pred_masks' if args.save_masks else None)
+            index = pd.Index(ids, name='sample_id')
+            df_true = pd.DataFrame(res['true'], index=index, columns=LCD.CLASSES)
+            df_true.to_csv(xp/f'y_{split}.csv')
             for agg in ('argmax', 'soft'):
-                infer_cfg = dict(seed=42, batch_size=args.batch_size, dataset_folder=str(dataset),
-                                 xp_rootdir=str(xp_root), xp_name=xp.name, set=split,
-                                 checkpoint_epoch=best, aggregation=agg)
-                tmp = xp/'tmp_infer.yaml'
-                yaml.safe_dump(infer_cfg, open(tmp, 'w'))
-                run(['framework.infer', '-c', str(tmp)])
-                score = kl_score(gt, xp/f'epoch{best}_{split}_{agg}_predicted.csv')
-                name = 'val' if split == 'val' else 'test'
-                row[f'KL_{name}_{agg}'] = round(score, 5)
-                print(f"    KL {name:4s} ({agg:6s}) = {score:.5f}")
-        if args.submission:
-            infer_cfg.update(set='test', aggregation='soft')
-            yaml.safe_dump(infer_cfg, open(tmp, 'w'))
-            run(['framework.infer', '-c', str(tmp)])
-            shutil.copy(xp/f'epoch{best}_test_soft_predicted.csv', xp/'submission.csv')
-        tmp.unlink(missing_ok=True)
-        rows.append(row)
+                df_pred = pd.DataFrame(res[agg], index=index, columns=LCD.CLASSES)
+                df_pred.to_csv(xp/f'epoch{best}_{split}_{agg}_predicted.csv')
+                row[f'KL_{split}_{agg}'] = round(kl(df_true, df_pred), 5)
+            if args.save_masks:
+                shutil.copy(xp/f'epoch{best}_{split}_soft_predicted.csv', xp/f'best_{split}_predicted.csv')
+            # pixel-wise metrics (group format)
+            df_cm = confusion_table(res['cm'])
+            df_cm.to_csv(xp/f'confusion_best_{split}.csv')
+            mean = df_cm[METRIC_COLS].mean().rename('mean').rename_axis('metric')
+            mean.to_csv(xp/f'mean_metrics_best_{split}.csv')
+            pd.DataFrame([{'split': split, 'best_epoch': best, 'KL_soft': row[f'KL_{split}_soft'],
+                           'KL_argmax': row[f'KL_{split}_argmax']}])\
+                .to_csv(xp/f'eval_best_{split}_results.csv', index=False)
+            for col in METRIC_COLS:
+                row[f'{split}_mean_{col.split(" ")[0]}'] = round(mean[col], 2)
+            print(f"    {split:4s}: KL argmax = {row[f'KL_{split}_argmax']:.5f} | KL soft = {row[f'KL_{split}_soft']:.5f}"
+                  f" | mean F1 = {mean['F1-score (%)']:.1f} % | mean IoU = {mean['IoU (%)']:.1f} %")
+            if split == 'test':
+                print(df_cm[METRIC_COLS].round(1).to_string())
 
-        # small result files -> results/<experiment>/ (no checkpoints)
+        if args.submission:
+            test_images = sorted((dataset/'test'/'images').glob('*.tif'))
+            if test_images:
+                res = predict(model, test_images, batch_size=args.batch_size)
+                pd.DataFrame(res['soft'], index=pd.Index([int(f.stem) for f in test_images], name='sample_id'),
+                             columns=LCD.CLASSES).to_csv(xp/'submission.csv')
+            else:
+                print("    no official test images found, no submission file")
+        rows.append(row)
+        del model
+        tf.keras.backend.clear_session()
+
+        # small result files -> results/<experiment>/ (no checkpoints, no masks)
         out = ROOT/'results'/xp.name
         shutil.rmtree(out, ignore_errors=True)
         out.mkdir(parents=True)

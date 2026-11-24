@@ -29,4 +29,4 @@ checkpoint_epoch: 84
 # how to turn the predicted pixel probabilities into a class distribution vector:
 #   - argmax : count the most confident class of every pixel (benchmark)
 #   - soft   : average the predicted probabilities over all pixels (often better for the KL metric)
-aggregation: argmax
+aggregation: soft
