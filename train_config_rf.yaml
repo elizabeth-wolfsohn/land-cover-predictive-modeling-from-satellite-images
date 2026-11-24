@@ -12,14 +12,14 @@ max_images: null
 n_jobs: 2                 # CPU uniquement (ignoré si backend: gpu)
 
 # Random Forest
-n_per_image: 1000
+n_per_image: 500
 n_estimators: 50
 max_depth: 25
 min_samples_leaf: 100
 class_weight: null  # CPU uniquement (ignoré si backend: gpu)
 max_features: 'sqrt'
 backend: gpu
+rare_class_idx: [8]
 
 # GPU (cuML) uniquement
-max_per_class: null  # plafond d'échantillons par classe ; null = pas de plafonnement
 n_bins: 128               # nombre de bins pour la recherche de seuils (cuML)

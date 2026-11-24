@@ -3,6 +3,7 @@ import numpy as np
 import joblib
 from tifffile import TiffFile
 from sklearn.ensemble import RandomForestClassifier
+from scipy.ndimage import uniform_filter
 
 from framework.dataset import LandCoverData as LCD
 
@@ -12,7 +13,7 @@ def read_image(path) -> np.ndarray:
     with TiffFile(path) as t:
         img = t.asarray()
     if img.shape[-1] != LCD.N_CHANNELS and img.shape[0] == LCD.N_CHANNELS:
-        img = np.transpose(img, (1, 2, 0))   # safety if stored channels-first
+        img = np.transpose(img, (1, 2, 0)) 
     return img.astype(np.float32) / LCD.TRAIN_PIXELS_MAX
 
 
@@ -44,21 +45,62 @@ def extract_features(img: np.ndarray) -> np.ndarray:
     return np.concatenate(features, axis=-1).astype(np.float32)
 
 
+def extract_features_window(img: np.ndarray, window_size=3) -> np.ndarray:
+    """
+    (H, W, 4) -> (H, W, 18)
 
-def balance_pixels(X, y, max_per_class=500, seed=42):
-    if max_per_class is None:
-        return X, y
-    rng = np.random.default_rng(seed)
-    idx = []
-    for c in np.unique(y):
-        ci = np.flatnonzero(y == c)
-        if len(ci) > max_per_class:
-            ci = rng.choice(ci, max_per_class, replace=False)
-        idx.append(ci)
-    idx = np.concatenate(idx)
-    rng.shuffle(idx)
-    return X[idx], y[idx]
+    4 bandes originales
+    6 indices spectraux
+    4 moyennes locales
+    4 écarts-types locaux
+    """
 
+    b2, b3, b4, b8 = (img[..., i] for i in range(4))
+    bands = [b2, b3, b4, b8]
+
+    # 1. Bandes originales
+    features = [img]
+
+    # 2. Indices spectraux
+    for i in range(len(bands)):
+        for j in range(i + 1, len(bands)):
+            nd = (bands[i] - bands[j]) / (
+                bands[i] + bands[j] + 1e-6
+            )
+            features.append(nd[..., None])
+
+    # 3. Statistiques locales
+    for band in bands:
+
+        local_mean = uniform_filter(
+            band, size=window_size, mode='reflect'
+        )
+
+        local_mean_sq = uniform_filter(
+            band ** 2, size=window_size, mode='reflect'
+        )
+
+        local_std = np.sqrt(
+            np.maximum(local_mean_sq - local_mean ** 2, 0)
+        )
+
+        features.append(local_mean[..., None])
+        features.append(local_std[..., None])
+
+    return np.concatenate(features, axis=-1).astype(np.float32)
+
+
+def compute_class_weights(y):
+    classes, counts = np.unique(y, return_counts=True)
+
+    frequencies = counts / counts.sum()
+
+    weights = 1.0 / np.sqrt(frequencies)
+
+    # Normalisation: average weight = 1
+    weights = weights / np.average(weights, weights=frequencies)
+
+    return dict(zip(classes.tolist(), weights.tolist()))
 
 
 class LandCoverRF:
@@ -72,17 +114,13 @@ class LandCoverRF:
     max_features,
     n_jobs,
     random_state,
-    max_per_class,
     n_bins,
         ):
         if backend not in ('gpu', 'cpu'):
             raise ValueError(f"backend doit être 'gpu' ou 'cpu', reçu : {backend!r}")
-        if max_per_class is not None and max_per_class <= 0:
-            raise ValueError("max_per_class doit être > 0 ou None.")
 
         self.backend = backend
         self.random_state = random_state
-        self.max_per_class = max_per_class
         self.n_bins = n_bins
 
         if backend == 'gpu':
@@ -92,7 +130,8 @@ class LandCoverRF:
                 max_depth=max_depth,
                 min_samples_leaf=min_samples_leaf,
                 max_features=max_features,
-                n_bins=n_bins,                 # <- plus de 128 en dur
+                n_bins=n_bins,  
+                class_weight=class_weight,        
                 random_state=random_state,
                 output_type='numpy',
                 verbose=2,
@@ -111,16 +150,34 @@ class LandCoverRF:
 
     def fit(self, X, y):
         self.classes_, y_idx = np.unique(y, return_inverse=True)
-        #if self.backend == 'gpu':
-            # X, y_idx = balance_pixels(
-            #     X, y_idx,
-            #     max_per_class=self.max_per_class,
-            #     seed=self.random_state,
-            # )
-            # print(f'Après équilibrage : {np.bincount(y_idx)}')
-            # X = np.ascontiguousarray(X, dtype=np.float32)
-            # y_idx = np.ascontiguousarray(y_idx, dtype=np.int32)
-        self.model.fit(X, y_idx)
+        if self.backend == 'gpu':
+            # Calculate weights
+            class_weights = compute_class_weights(y_idx)
+
+            print("Effectifs:", np.bincount(y_idx))
+            print("Class weights used:", class_weights)
+
+            # Data preparation for cuML
+            X = np.ascontiguousarray(X, dtype=np.float32)
+            y_idx = np.ascontiguousarray(y_idx, dtype=np.int32)
+
+            # Distribute sample weights
+            sample_weight = np.ascontiguousarray(
+                np.array(
+                    [class_weights[c] for c in y_idx],
+                    dtype=np.float32
+                )
+            )
+
+            self.model.fit(
+                X,
+                y_idx,
+                sample_weight=sample_weight
+            )
+
+        else:
+            self.model.fit(X, y_idx)
+
         return self
 
     def predict_image(self, img, stride=1):
@@ -134,7 +191,7 @@ class LandCoverRF:
         joblib.dump({
             'backend': self.backend, 'model': self.model, 'classes_': self.classes_,
             'random_state': self.random_state,
-            'max_per_class': self.max_per_class, 'n_bins': self.n_bins,
+            'n_bins': self.n_bins,
         }, path, compress=3)
 
     @classmethod
@@ -143,7 +200,6 @@ class LandCoverRF:
         obj = cls.__new__(cls)
         obj.backend, obj.model, obj.classes_ = data['backend'], data['model'], data['classes_']
         obj.random_state = data['random_state']
-        obj.max_per_class = data['max_per_class']
         obj.n_bins = data['n_bins']
         if obj.backend == 'cpu':
             obj.model.verbose = 0

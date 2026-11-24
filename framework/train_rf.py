@@ -20,39 +20,39 @@ from framework.models.random_forest import (
     mask_path_from_image, extract_features
 )
 
-
-def sample_pixels(image_path, n_per_image, rng):
+def sample_pixels(image_path, n_per_image, rng, rare_class_idx):
     """Sample pixels (features, labels) from one image."""
 
     img = read_image(image_path)
     mask = read_mask(mask_path_from_image(image_path))
-
     flat = mask.ravel()
-    idx = np.flatnonzero(~np.isin(flat, LCD.IGNORED_CLASSES_IDX))
-
+    idx = np.flatnonzero(
+        ~np.isin(flat, LCD.IGNORED_CLASSES_IDX)
+    )
     if len(idx) == 0:
         return None, None
-
     selected_idx = []
-
     for class_id in np.unique(flat[idx]):
+        # Indices des pixels de cette classe
         class_idx = idx[flat[idx] == class_id]
-
-        sampled = rng.choice(
-            class_idx,
-            size=min(n_per_image, len(class_idx)),
-            replace=False
-        )
-
+        # Keep all pixels for rare classes
+        if class_id in rare_class_idx:
+            sampled = class_idx
+        # Other classes --> random sampling
+        else:
+            sampled = rng.choice(
+                class_idx,
+                size=min(n_per_image, len(class_idx)),
+                replace=False
+            )
         selected_idx.append(sampled)
-
     idx = np.concatenate(selected_idx)
-
     pixels = img.reshape(-1, img.shape[-1])[idx]
- 
-    feats = extract_features(pixels[:, None, :]).reshape(len(idx), -1)
-
+    feats = extract_features(
+        pixels[:, None, :]
+    ).reshape(len(idx), -1)
     return feats, flat[idx]
+
 
 
 def stratified_image_selection(train_files, max_images, seed):
@@ -128,7 +128,7 @@ if __name__ == '__main__':
         'n_per_image', 'max_images',
         'n_estimators', 'max_depth', 'min_samples_leaf', 'max_features',
         'class_weight', 'n_jobs',        # CPU uniquement
-        'max_per_class', 'n_bins',       # GPU uniquement
+        'n_bins',       # GPU uniquement
     ]
     missing = [k for k in REQUIRED_KEYS if k not in cfg]
     if missing:
@@ -150,9 +150,9 @@ if __name__ == '__main__':
 
     class_weight = cfg['class_weight']        # CPU uniquement
     n_jobs = cfg['n_jobs']                    # CPU uniquement
-
-    max_per_class = cfg['max_per_class']      # GPU uniquement, null = pas de plafond
     n_bins = cfg['n_bins']                    # GPU uniquement
+
+    rare_class_idx=cfg['rare_class_idx']   
 
 
     print(f'Configuration: {cfg}')
@@ -207,7 +207,7 @@ if __name__ == '__main__':
 
     for f in tqdm(train_files, desc='Sampling'):
 
-        X, y = sample_pixels(f, n_per_image, rng)
+        X, y = sample_pixels(f, n_per_image, rng, rare_class_idx)
 
         if X is not None:
             Xs.append(X)
@@ -234,7 +234,6 @@ if __name__ == '__main__':
     max_features=max_features,
     n_jobs=n_jobs,
     random_state=seed,
-    max_per_class=max_per_class,
     n_bins=n_bins,
 )
     rf.fit(X, y)
