@@ -1,0 +1,9 @@
+configuration: ensemble + TTA
+temperature: 1.0
+tta_transforms: 8
+experiments:
+- 2026-11-24_15-12-34_deeplabv3plus
+- 2026-11-24_15-36-31_deeplabv3plus
+names:
+- scratch
+- imagenet
