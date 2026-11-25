@@ -1,11 +1,11 @@
 {
   "n_batches_measured": 57,
   "n_images_measured": 1817,
-  "first_batch_s (warmup)": 2.439115151995793,
-  "total_inference_s": 114.96347730205161,
-  "throughput_img_per_s": 15.805019495244288,
-  "latency_ms_per_image_mean": 63.33936363574666,
-  "latency_ms_per_image_median": 63.320551156721194,
-  "latency_ms_per_image_p95": 65.50100744934753,
+  "first_batch_s (warmup)": 27.31934315000035,
+  "total_inference_s": 28.85703917999672,
+  "throughput_img_per_s": 62.96557275562484,
+  "latency_ms_per_image_mean": 19.190333926884197,
+  "latency_ms_per_image_median": 3.993615843739917,
+  "latency_ms_per_image_p95": 4.260277431228587,
   "batch_size": 32
 }

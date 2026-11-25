@@ -9,7 +9,7 @@ seed: 42
 # the size of each batch of images when performing prediction
 batch_size: 32 
 # the path to the root folder of the dataset
-dataset_folder: 'local_dataset'
+dataset_folder: 'dataset/'
 # the path to the root directory used to store experiments
 xp_rootdir: 'experiments'
 # the name of log directory for an experiment (result of training)

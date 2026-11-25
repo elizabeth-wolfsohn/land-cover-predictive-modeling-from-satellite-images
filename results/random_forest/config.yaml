@@ -1,0 +1,16 @@
+seed: 42
+dataset_folder: local_dataset
+xp_rootdir: experiments
+max_images: null
+n_jobs: 2
+n_per_image: 700
+n_estimators: 100
+max_depth: 15
+min_samples_leaf: 20
+class_weight: null
+max_features: sqrt
+backend: gpu
+rare_class_idx:
+- 8
+n_bins: 128
+max_class_weight: 20

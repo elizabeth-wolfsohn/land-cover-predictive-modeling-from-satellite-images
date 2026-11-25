@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from tifffile import imwrite
+import time
 
 from framework.dataset import LandCoverData as LCD
 from framework.models.random_forest import LandCoverRF, read_image
@@ -71,23 +72,35 @@ if __name__ == '__main__':
     pred_mask_dir.mkdir(parents=True, exist_ok=True)
 
     y_pred = []
+    inference_times = []
 
     for image_path in tqdm(files, desc="Predicting"):
 
         img = read_image(image_path)
 
-        # 1. Prédiction pixel par pixel
+        # 1. Mesure du temps d'inférence
+        start_time = time.perf_counter()
+
         predicted_mask = rf.predict_image(img, stride=stride)
+
+        end_time = time.perf_counter()
+
+        inference_time = end_time - start_time
+        inference_times.append(inference_time)
 
         # 2. Sauvegarde de la carte prédite
         out_mask = pred_mask_dir / image_path.name
         imwrite(out_mask, predicted_mask.astype(np.uint8))
 
-        # 3. Proportions calculées à partir du masque déjà prédit
-        counts = np.bincount(predicted_mask.ravel(), minlength=LCD.N_CLASSES)
+        # 3. Calcul des proportions
+        counts = np.bincount(
+            predicted_mask.ravel(),
+            minlength=LCD.N_CLASSES
+        )
+
         y_pred.append(counts / counts.sum())
 
-    # Sauvegarde des proportions par image
+    # 4. Sauvegarde des proportions par image
     y_pred = np.stack(y_pred)
 
     ids = pd.Series(
@@ -103,4 +116,25 @@ if __name__ == '__main__':
     print(f"Saving prediction CSV to {out_csv}")
     df.to_csv(out_csv, index=True, index_label='sample_id')
 
+    # 5. Sauvegarde des temps d'inférence
+    df_times = pd.DataFrame({
+        'sample_id': [int(f.stem) for f in files],
+        'inference_time_seconds': inference_times
+    })
+
+    out_times = xp_dir / f'rf_{set_name}_inference_times.csv'
+    df_times.to_csv(out_times, index=False)
+
+    # 6. Statistiques des temps d'inférence
+    print("\nInference time statistics:")
+    print(f"Total inference time: {np.sum(inference_times):.3f} s")
+    print(f"Mean inference time: {np.mean(inference_times):.3f} s")
+    print(f"Median inference time: {np.median(inference_times):.3f} s")
+    print(f"Min inference time: {np.min(inference_times):.3f} s")
+    print(f"Max inference time: {np.max(inference_times):.3f} s")
+
+    throughput = len(files) / np.sum(inference_times)
+    print(f"Inference throughput: {throughput:.2f} images/s")
+
+    print(f"Inference times saved to {out_times}")
     print(f"Pixel-wise predictions saved in {pred_mask_dir}")

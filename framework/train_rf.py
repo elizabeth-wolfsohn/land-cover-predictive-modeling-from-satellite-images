@@ -20,6 +20,8 @@ from framework.models.random_forest import (
     mask_path_from_image, extract_features
 )
 
+
+
 def sample_pixels(image_path, n_per_image, rng, rare_class_idx):
     """Sample pixels (features, labels) from one image."""
 
@@ -126,9 +128,9 @@ if __name__ == '__main__':
     REQUIRED_KEYS = [
         'dataset_folder', 'xp_rootdir', 'backend', 'seed',
         'n_per_image', 'max_images',
-        'n_estimators', 'max_depth', 'min_samples_leaf', 'max_features',
+        'n_estimators',  'min_samples_leaf', 'max_features',
         'class_weight', 'n_jobs',        # CPU uniquement
-        'n_bins',       # GPU uniquement
+        'n_bins',  "max_depth"     # GPU uniquement
     ]
     missing = [k for k in REQUIRED_KEYS if k not in cfg]
     if missing:
@@ -144,15 +146,16 @@ if __name__ == '__main__':
     max_images = cfg['max_images']            # null = toutes les images
 
     n_estimators = cfg['n_estimators']
-    max_depth = cfg['max_depth']
     min_samples_leaf = cfg['min_samples_leaf']
     max_features = cfg['max_features']
+    max_depth = cfg['max_depth']
 
     class_weight = cfg['class_weight']        # CPU uniquement
     n_jobs = cfg['n_jobs']                    # CPU uniquement
     n_bins = cfg['n_bins']                    # GPU uniquement
 
-    rare_class_idx=cfg['rare_class_idx']   
+    rare_class_idx=cfg['rare_class_idx'] 
+    max_class_weight = cfg['max_class_weight']  
 
 
     print(f'Configuration: {cfg}')
@@ -218,9 +221,9 @@ if __name__ == '__main__':
 
     X = np.concatenate(Xs)
     y = np.concatenate(ys)
-
+    print(f'Class counts before sampling: {LCD.TRAIN_CLASS_COUNTS}')
     print(f'Sampling: {time.perf_counter() - t0:.0f}s, X={X.shape}')
-    print(f'Class counts: {np.bincount(y, minlength=LCD.N_CLASSES)}')
+    print(f'Class counts after sampling: {np.bincount(y, minlength=LCD.N_CLASSES)}')
 
     # --- Train Random Forest ---
     t0 = time.perf_counter()
@@ -228,13 +231,14 @@ if __name__ == '__main__':
     rf = LandCoverRF(
     backend=backend,
     n_estimators=n_estimators,
-    max_depth=max_depth,
     min_samples_leaf=min_samples_leaf,
     class_weight=class_weight,
     max_features=max_features,
+    max_depth=max_depth,
     n_jobs=n_jobs,
     random_state=seed,
     n_bins=n_bins,
+    max_class_weight=max_class_weight,
 )
     rf.fit(X, y)
 

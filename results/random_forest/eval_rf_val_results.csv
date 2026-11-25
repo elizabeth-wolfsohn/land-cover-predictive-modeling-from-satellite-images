@@ -1,2 +1,0 @@
-gt_file,pred_file,score
-local_dataset/csv_files/validation_labels.csv,experiments/23-11-2026_15-18-17/rf_val_predicted.csv,0.18017970468712366

@@ -90,15 +90,18 @@ def extract_features_window(img: np.ndarray, window_size=3) -> np.ndarray:
     return np.concatenate(features, axis=-1).astype(np.float32)
 
 
-def compute_class_weights(y):
+def compute_class_weights(y, max_weight):
     classes, counts = np.unique(y, return_counts=True)
 
     frequencies = counts / counts.sum()
 
     weights = 1.0 / np.sqrt(frequencies)
 
+    weights = np.minimum(weights, max_weight)
+
     # Normalisation: average weight = 1
     weights = weights / np.average(weights, weights=frequencies)
+
 
     return dict(zip(classes.tolist(), weights.tolist()))
 
@@ -108,13 +111,14 @@ class LandCoverRF:
     self,
     backend,
     n_estimators,
-    max_depth,
     min_samples_leaf,
     class_weight,
     max_features,
     n_jobs,
     random_state,
     n_bins,
+    max_depth,
+    max_class_weight
         ):
         if backend not in ('gpu', 'cpu'):
             raise ValueError(f"backend doit être 'gpu' ou 'cpu', reçu : {backend!r}")
@@ -122,37 +126,39 @@ class LandCoverRF:
         self.backend = backend
         self.random_state = random_state
         self.n_bins = n_bins
+        self.max_class_weight = max_class_weight
+        self.max_depth = max_depth
 
         if backend == 'gpu':
             from cuml.ensemble import RandomForestClassifier as cuRF
             self.model = cuRF(
                 n_estimators=n_estimators,
-                max_depth=max_depth,
                 min_samples_leaf=min_samples_leaf,
                 max_features=max_features,
                 n_bins=n_bins,  
                 class_weight=class_weight,        
                 random_state=random_state,
                 output_type='numpy',
-                verbose=2,
+                max_depth=max_depth,
+                verbose=2
             )
         else:
             self.model = RandomForestClassifier(
                 n_estimators=n_estimators,
-                max_depth=max_depth,
                 min_samples_leaf=min_samples_leaf,
                 class_weight=class_weight,
                 max_features=max_features,
                 n_jobs=n_jobs,
                 random_state=random_state,
                 verbose=2,
+                max_depth=max_depth,
             )
 
     def fit(self, X, y):
         self.classes_, y_idx = np.unique(y, return_inverse=True)
         if self.backend == 'gpu':
             # Calculate weights
-            class_weights = compute_class_weights(y_idx)
+            class_weights = compute_class_weights(y_idx,max_weight=self.max_class_weight)
 
             print("Effectifs:", np.bincount(y_idx))
             print("Class weights used:", class_weights)
