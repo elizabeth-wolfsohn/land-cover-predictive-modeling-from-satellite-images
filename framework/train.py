@@ -19,11 +19,21 @@ import tensorflow as tf
 from framework.dataset import LandCoverData as LCD
 from framework.dataset import parse_image, load_image_train, load_image_test
 from framework.model import build_model
+from framework.losses import build_loss
 from framework.metrics import PixelAccuracy, ClassDistributionKL
 from framework.visualization import (
     plot_dataset_samples, plot_predictions, plot_training_curves, open_file
 )
 from framework.utils import YamlNamespace
+
+def _optional_config_value(config, key, default=None):
+    """Renvoie config.<key>, ou `default` si la clé est absente du fichier YAML."""
+    try:
+        value = getattr(config, key)
+    except (AttributeError, KeyError):
+        return default
+    return default if value is None else value
+
 
 class VisualizationCallback(tf.keras.callbacks.Callback):
     """At the end of every epoch, saves:
@@ -189,6 +199,26 @@ if __name__ == '__main__':
     counts = LCD.TRAIN_CLASS_COUNTS.astype(np.float64)
     if config.class_weighting is None:
         class_weight = np.ones(LCD.N_CLASSES)
+    elif isinstance(config.class_weighting, (list, tuple)):
+        # weights given directly in the YAML, one per class (group values: inverse square root
+        # of the class frequency, normalized to a mean pixel weight of 1, capped at 10)
+        class_weight = np.asarray(config.class_weighting, dtype=np.float64)
+        assert class_weight.shape == (LCD.N_CLASSES,), f"class_weighting: {LCD.N_CLASSES} values expected"
+    elif not isinstance(config.class_weighting, str):
+        # group formula: w_c = min(f_c^-p / sum_k f_k^(1-p), max_weight), f = class frequency among
+        # the evaluated classes; the mean weight of a pixel is 1 (p=0: no re-weighting, 0.5: inverse
+        # square root, 1: inverse frequency)
+        cw = config.class_weighting
+        assert getattr(cw, 'mode', 'power') == 'power', f"unknown class_weighting.mode {cw.mode}"
+        power = float(getattr(cw, 'power', 0.5))
+        max_weight = getattr(cw, 'max_weight', None)
+        eval_idx = [c for c in range(LCD.N_CLASSES) if c not in LCD.IGNORED_CLASSES_IDX]
+        freq = np.maximum(counts[eval_idx], 1.) / counts[eval_idx].sum()
+        w = freq ** (-power) / np.sum(freq ** (1. - power))
+        if max_weight is not None:
+            w = np.minimum(w, float(max_weight))
+        class_weight = np.zeros(LCD.N_CLASSES)
+        class_weight[eval_idx] = w
     elif config.class_weighting == 'inverse_sqrt_freq':
         # softer than inverse frequency (which would give a weight > 100 000 to "snow")
         median_count = np.median(counts[2:])
@@ -293,7 +323,17 @@ if __name__ == '__main__':
     # get optimizer, loss, and compile model for training
     optimizer = tf.keras.optimizers.Adam(learning_rate=config.lr)
 
-    loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False)
+    loss_cfg = _optional_config_value(config, 'loss')
+    loss = build_loss(
+        loss_type=_optional_config_value(loss_cfg, 'type', 'ce'),
+        n_classes=LCD.N_CLASSES,
+        ignored_idx=LCD.IGNORED_CLASSES_IDX,
+        ce_weight=_optional_config_value(loss_cfg, 'ce_weight', 1.0),
+        kl_weight=_optional_config_value(loss_cfg, 'kl_weight', 1.0),
+    )
+    print(f"Loss: {_optional_config_value(loss_cfg, 'type', 'ce')}, "
+          f"ce_weight={_optional_config_value(loss_cfg, 'ce_weight', 1.0)}, "
+          f"kl_weight={_optional_config_value(loss_cfg, 'kl_weight', 1.0)}")
     print("Compile model")
     model.compile(optimizer=optimizer,
                   loss=loss,

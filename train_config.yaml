@@ -61,7 +61,18 @@ model:
 
 # per-pixel weighting of the loss: null (all classes weighted 1) or 'inverse_sqrt_freq'
 # (rare classes weighted more, clipped to 10). "no_data" and "clouds" are always weighted 0.
-class_weighting: null
+# per-class weights of the cross-entropy, given directly (group values, see the report):
+# inverse square root of the class frequency, mean pixel weight 1, capped at 10 (snow).
+# Order: no_data, clouds, artificial, cultivated, broadleaf, coniferous, herbaceous, natural, snow, water
+class_weighting: [0., 0., 1.9104365, 0.7414725, 0.8962822, 1.5187677, 0.8169715, 4.7712197, 10., 2.7509751]
+# null instead of the list above = no class weighting (weight 1, 0 for no_data / clouds)
+
+# loss: 'ce' (pixel cross-entropy, benchmark) or 'ce_kl' (cross-entropy + KL of the class
+# proportions of each image, mean of the softmax; same loss as the group's U-Net)
+loss:
+  type: ce_kl
+  ce_weight: 1.0
+  kl_weight: 10.0
 
 # visualization (PNG files saved in <experiment>/plots/)
 # open the figures automatically (Windows): dataset samples at the start, curves + predictions at the end
