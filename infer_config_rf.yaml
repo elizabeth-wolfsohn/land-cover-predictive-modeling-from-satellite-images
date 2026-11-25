@@ -4,7 +4,7 @@
 
 
 seed: 42
-dataset_folder: 'local_dataset'
+dataset_folder: 'dataset'
 xp_rootdir: 'experiments'
 xp_name: last  
 set: test                 
