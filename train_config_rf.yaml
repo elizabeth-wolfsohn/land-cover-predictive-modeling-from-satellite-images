@@ -23,4 +23,4 @@ rare_class_idx: [8]
 
 # GPU (cuML) uniquement
 n_bins: 128               # nombre de bins pour la recherche de seuils (cuML)
-max_class_weight: 20
+max_class_weight: 10
