@@ -31,7 +31,7 @@ for (name, df), color in zip(logs.items(), plt.rcParams['axes.prop_cycle'].by_ke
         axs[2].plot(df.epoch, df.val_acc, color=color, label=f'{name} acc val')
         axs[2].plot(df.epoch, df.val_miou, color=color, ls='--', label=f'{name} mIoU val')
 
-axs[0].set(title='Cross-entropy', xlabel='epoch', ylabel='loss')
+axs[0].set(title='Loss', xlabel='epoch', ylabel='loss')
 axs[1].axhline(BENCHMARK_KL, color='grey', ls=':', label='benchmark U-Net')
 axs[1].set(title='KL divergence (validation)', xlabel='epoch', ylabel='KL', yscale='log')
 if has_acc:

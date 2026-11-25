@@ -11,7 +11,7 @@ model: 'swin'
 # e.g. 'swinv2_tiny_window8_256', 'swinv2_small_window8_256', 'convnext_tiny'
 # or a Swin-v2 pretrained on Sentinel-2 by SatlasPretrain: 'satlas_swint_ms' (tiny), 'satlas_swinb_ms' (base)
 # pretrained weights are downloaded from Hugging Face at the first run
-backbone: 'swinv2_small_window8_256'
+backbone: 'swinv2_tiny_window8_256'
 # the size of each batch of images when training
 # careful not to use a too large batch size, might lead to OOM errors
 batch_size: 32
@@ -24,11 +24,19 @@ lr: 0.0001
 weight_decay: 0.05
 # class weights of the loss (same keys as the group's code): w(c) = freq(c)^-power,
 # normalized to an average pixel weight of 1, clipped to max_weight ("no_data" and "clouds" always 0)
-#   mode: 'uniform' (no re-balancing), 'benchmark' (inverse frequency) or 'power'
+#   mode: 'uniform' (no re-balancing), 'benchmark' (inverse frequency), 'power'
+#   or 'manual' (the `weights` list below, one weight per class, used as is)
 class_weighting:
-  mode: 'uniform'
+  mode: 'manual'
   power: 0.5
   max_weight: null
+  weights: [0., 0., 1.9104365, 0.7414725, 0.8962822, 1.5187677, 0.8169715, 4.7712197, 10., 2.7509751]
+# the loss: 'ce' (class-weighted pixel cross-entropy, benchmark) or 'ce_kl'
+# (ce_weight * weighted pixel cross-entropy + kl_weight * KL of the per-image class proportions)
+loss:
+  type: 'ce_kl'
+  ce_weight: 1.0
+  kl_weight: 10.0
 # the prediction mode used to select the best checkpoint on the validation KL:
 # 'argmax' (count the most confident class of each pixel, benchmark) or 'soft' (average the probabilities)
 pred_mode: 'soft'

@@ -20,8 +20,18 @@ from tqdm import tqdm
 from framework.dataset import LandCoverData as LCD
 from framework.dataset import LandCoverDataset, class_distribution, predict_distribution, input_normalization
 from framework.eval import epsilon_kl_divergence
+from framework.losses import build_loss
 from framework.model import build_model
 from framework.utils import YamlNamespace
+
+
+def _optional_config_value(config, key, default=None):
+    """Renvoie config.<key>, ou `default` si la clé est absente du fichier YAML."""
+    try:
+        value = getattr(config, key)
+    except (AttributeError, KeyError):
+        return default
+    return default if value is None else value
 
 
 def _parse_args():
@@ -57,10 +67,17 @@ def read_split(config):
     return {name: [config.dataset_folder/'train/images'/f'{i}.tif' for i in ids] for name, ids in splits.items()}
 
 
-def build_class_weights(mode='uniform', power=0.5, max_weight=None):
+def build_class_weights(mode='uniform', power=0.5, max_weight=None, weights=None):
     """Loss class weights (as in the group's code): w(c) = freq(c)^-p, normalized to an average
-    pixel weight of 1, clipped to max_weight. mode: 'uniform' (p=0), 'benchmark' (p=1, no clipping)
-    or 'power' (p=power). "no_data" and "clouds" always get 0."""
+    pixel weight of 1, clipped to max_weight. mode: 'uniform' (p=0), 'benchmark' (p=1, no clipping),
+    'power' (p=power) or 'manual' (the `weights` list, one per class, given as is).
+    "no_data" and "clouds" always get 0."""
+    if mode == 'manual':
+        assert weights is not None, "class_weighting.weights is required with mode 'manual'"
+        weights = np.asarray(weights, dtype='float32')
+        assert weights.shape == (LCD.N_CLASSES,), f"expected {LCD.N_CLASSES} class weights, got {weights.shape}"
+        assert (weights[LCD.IGNORED_CLASSES_IDX] == 0).all(), "ignored classes must get a weight of 0"
+        return weights
     p = {'uniform': 0., 'benchmark': 1., 'power': float(power)}[mode]
     if mode != 'power':
         max_weight = None
@@ -188,9 +205,19 @@ if __name__ == '__main__':
     print(f"Model {config.model}: {sum(p.numel() for p in model.parameters()) / 1e6:.1f}M parameters")
 
     cw = config.class_weighting
-    class_weight = build_class_weights(cw.mode, cw.power, cw.max_weight)
+    class_weight = build_class_weights(cw.mode, cw.power, cw.max_weight,
+                                       weights=_optional_config_value(cw, 'weights'))
     print(f"Will use class weights: {class_weight}")
-    loss_fn = torch.nn.CrossEntropyLoss(weight=torch.from_numpy(class_weight).to(device))
+    loss_cfg = _optional_config_value(config, 'loss')
+    loss_fn = build_loss(
+        loss_type=_optional_config_value(loss_cfg, 'type', 'ce'),
+        n_classes=LCD.N_CLASSES,
+        ignored_idx=LCD.IGNORED_CLASSES_IDX,
+        ce_weight=_optional_config_value(loss_cfg, 'ce_weight', 1.0),
+        kl_weight=_optional_config_value(loss_cfg, 'kl_weight', 1.0),
+        class_weight=torch.from_numpy(class_weight),
+    ).to(device)
+    print(f"Loss: {loss_fn}")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
     # linear warmup then cosine decay

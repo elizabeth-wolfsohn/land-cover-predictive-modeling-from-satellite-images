@@ -3,7 +3,7 @@ dataset_folder: './local_dataset'
  
 # Experiment
 xp_rootdir: './code/experiments'
-xp_name: 'swinv2_small_patch4_windows8'
+xp_name: 'swinv2_tiny_patch4_windows8'
  
 # Evaluation dataset
 set: test # train, val ou test
