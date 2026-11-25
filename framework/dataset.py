@@ -133,6 +133,53 @@ def load_image_train(input_image, input_mask):
     return image, mask
 
 
+def make_load_image_train(radiometric=None):
+    """Train-time loading function: geometric augmentations of `load_image_train` (flips, rotations)
+    + optional radiometric augmentations, applied on the image only (the mask is unchanged).
+
+    `radiometric` is None/False (geometric only) or a dict-like with the optional keys:
+        prob        probability of augmenting an image (default 0.8)
+        brightness  global multiplicative factor in [1-b, 1+b] (default 0.1)
+        contrast    contrast factor in [1-c, 1+c] around the mean of each band (default 0.1)
+        band_jitter independent multiplicative factor per band (R, G, B, NIR) in [1-j, 1+j] (default 0.05)
+        noise       std of the additive gaussian noise, relative to the std of each band (default 0.03)
+    The scale of the images (10 m per pixel) is never changed: no zoom / crop-and-resize.
+    """
+    if not radiometric:
+        return load_image_train
+
+    def _get(key, default):
+        value = radiometric.get(key) if isinstance(radiometric, dict) else getattr(radiometric, key, None)
+        return float(default if value is None else value)
+
+    prob = _get('prob', 0.8)
+    brightness = _get('brightness', 0.1)
+    contrast = _get('contrast', 0.1)
+    band_jitter = _get('band_jitter', 0.05)
+    noise = _get('noise', 0.03)
+    n_bands = LandCoverData.N_CHANNELS
+
+    @tf.function
+    def _augment(image):
+        mean = tf.reduce_mean(image, axis=(0, 1), keepdims=True)
+        std = tf.math.reduce_std(image, axis=(0, 1), keepdims=True)
+        c = tf.random.uniform((), 1. - contrast, 1. + contrast)
+        image = (image - mean) * c + mean
+        b = tf.random.uniform((), 1. - brightness, 1. + brightness)
+        j = tf.random.uniform((1, 1, n_bands), 1. - band_jitter, 1. + band_jitter)
+        image = image * b * j
+        image = image + tf.random.normal(tf.shape(image)) * noise * std
+        return tf.maximum(image, 0.)
+
+    @tf.function
+    def _load(input_image, input_mask):
+        image, mask = load_image_train(input_image, input_mask)
+        image = tf.cond(tf.random.uniform(()) < prob, lambda: _augment(image), lambda: image)
+        return image, mask
+
+    return _load
+
+
 @tf.function
 def load_image_test(input_image, input_mask):
     """Normalize test image and its label mask."""

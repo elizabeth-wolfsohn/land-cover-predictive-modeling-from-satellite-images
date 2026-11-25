@@ -17,7 +17,7 @@ import pandas as pd
 import tensorflow as tf
 
 from framework.dataset import LandCoverData as LCD
-from framework.dataset import parse_image, load_image_train, load_image_test
+from framework.dataset import parse_image, load_image_train, load_image_test, make_load_image_train
 from framework.model import build_model
 from framework.losses import build_loss
 from framework.metrics import PixelAccuracy, ClassDistributionKL
@@ -33,6 +33,14 @@ def _optional_config_value(config, key, default=None):
     except (AttributeError, KeyError):
         return default
     return default if value is None else value
+
+
+def cosine_lr(epoch, lr_max, lr_min, epochs, warmup_epochs=0):
+    """Learning rate of an epoch (0-based): linear warm-up, then cosine decay from lr_max to lr_min."""
+    if epoch < warmup_epochs:
+        return lr_max * (epoch + 1) / warmup_epochs
+    t = (epoch - warmup_epochs) / max(1, epochs - warmup_epochs - 1)
+    return lr_min + 0.5 * (lr_max - lr_min) * (1. + np.cos(np.pi * min(1., t)))
 
 
 class VisualizationCallback(tf.keras.callbacks.Callback):
@@ -114,6 +122,11 @@ def _parse_args():
         config.num_dataset_samples = 10
     if not hasattr(config, 'num_prediction_samples'):
         config.num_prediction_samples = 4
+    # options of the long trainings (all optional, the defaults give the previous behaviour)
+    for key, default in (('augmentation', None), ('lr_schedule', None),
+                         ('checkpoint_best_only', False), ('xp_tag', None)):
+        if not hasattr(config, key):
+            setattr(config, key, default)
 
     return config
 
@@ -234,7 +247,16 @@ if __name__ == '__main__':
         weights = tf.gather(class_weight_tf, tf.cast(mask[..., 0], tf.int32))
         return image, mask, weights
 
-    train_dataset = train_dataset.map(load_image_train, num_parallel_calls=N_CPUS)\
+    # augmentation of the training images: flips + rotations (always), + radiometric if
+    # augmentation.radiometric is true (default ranges) or gives the ranges (see make_load_image_train)
+    radiometric = _optional_config_value(config.augmentation, 'radiometric', False) if config.augmentation else False
+    if radiometric is True:
+        radiometric = {'prob': 0.8}
+    elif radiometric is not False:
+        radiometric = vars(radiometric)
+    print("Augmentation: flips + rotations" + (f" + radiometric {radiometric}" if radiometric else ""))
+    train_loader = make_load_image_train(radiometric) if radiometric else load_image_train
+    train_dataset = train_dataset.map(train_loader, num_parallel_calls=N_CPUS)\
         .map(add_pixel_weights, num_parallel_calls=N_CPUS)\
         .shuffle(buffer_size=1024, seed=config.seed)\
         .repeat()\
@@ -250,6 +272,7 @@ if __name__ == '__main__':
     # where to write files for this experiments
     xp_dir = config.xp_rootdir / (
         datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") + f"_{config.model.name}"
+        + (f"_{config.xp_tag}" if config.xp_tag else "")
     )  # no ':' in the name, forbidden on Windows
     (xp_dir/'tensorboard').mkdir(parents=True)
     (xp_dir/'plots').mkdir()
@@ -286,18 +309,33 @@ if __name__ == '__main__':
             update_freq='epoch'
         ),
         # tf.keras.callbacks.EarlyStopping(patience=10, verbose=1),
+        # checkpoint_best_only: only the epochs improving val_kl are saved (the best epoch, chosen on
+        # val_kl by evaluate_test.py, is always kept) -> a few GB less for long trainings
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(xp_dir/'checkpoints'/'epoch{epoch}'), save_best_only=False, verbose=1
+            filepath=str(xp_dir/'checkpoints'/'epoch{epoch}'),
+            save_best_only=bool(config.checkpoint_best_only), monitor='val_kl', mode='min', verbose=1
         ),
         tf.keras.callbacks.CSVLogger(
             filename=str(xp_dir/'fit_logs.csv')
         ),
-        tf.keras.callbacks.ReduceLROnPlateau(
+    ]
+    # learning rate: 'plateau' (default, halved after lr_patience epochs without improvement)
+    # or 'cosine' (warm-up, then cosine decay down to min_lr at the last epoch)
+    schedule = _optional_config_value(config.lr_schedule, 'type', 'plateau') if config.lr_schedule else 'plateau'
+    if schedule == 'cosine':
+        lr_min = float(_optional_config_value(config.lr_schedule, 'min_lr', 1e-5))
+        warmup = int(_optional_config_value(config.lr_schedule, 'warmup_epochs', 0))
+        print(f"LR schedule: cosine {config.lr} -> {lr_min} over {config.epochs} epochs, warm-up {warmup}")
+        callbacks.append(tf.keras.callbacks.LearningRateScheduler(
+            lambda epoch, lr: float(cosine_lr(epoch, config.lr, lr_min, config.epochs, warmup)), verbose=0))
+    elif schedule == 'plateau':
+        callbacks.append(tf.keras.callbacks.ReduceLROnPlateau(
             patience=config.lr_patience,
             factor=0.5,
             verbose=1,
-        )
-    ]
+        ))
+    else:
+        raise ValueError(f"Unknown lr_schedule.type '{schedule}' (plateau or cosine)")
     # create the model to train (see the "model" section of the YAML config)
     model_kwargs = vars(config.model.kwargs) if getattr(config.model, 'kwargs', None) else {}
     if config.model.name == 'deeplabv3plus':

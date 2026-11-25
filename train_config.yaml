@@ -74,6 +74,31 @@ loss:
   ce_weight: 1.0
   kl_weight: 10.0
 
+# augmentation of the training images: flips + rotations are always applied.
+# radiometric: false, true (default ranges below) or the ranges, applied on the image only:
+#   prob (probability per image), brightness (global factor 1 +/- b), contrast (1 +/- c around the
+#   band mean), band_jitter (factor per band R, G, B, NIR: 1 +/- j), noise (gaussian, x band std)
+augmentation:
+  radiometric: false
+#  radiometric:
+#    prob: 0.8
+#    brightness: 0.1
+#    contrast: 0.1
+#    band_jitter: 0.05
+#    noise: 0.03
+
+# learning rate schedule: 'plateau' (halved after lr_patience epochs without improvement)
+# or 'cosine' (linear warm-up over warmup_epochs, then cosine decay from lr to min_lr)
+lr_schedule:
+  type: plateau
+  min_lr: 1.0e-5
+  warmup_epochs: 2
+
+# save only the checkpoints that improve val_kl (the best epoch is always kept): saves disk space
+checkpoint_best_only: false
+# optional suffix of the experiment folder name (e.g. 'imagenet_cekl_seed1')
+xp_tag: null
+
 # visualization (PNG files saved in <experiment>/plots/)
 # open the figures automatically (Windows): dataset samples at the start, curves + predictions at the end
 show_plots: true
