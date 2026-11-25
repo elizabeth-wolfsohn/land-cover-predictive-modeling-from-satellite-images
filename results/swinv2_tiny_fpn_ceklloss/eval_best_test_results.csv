@@ -1,0 +1,2 @@
+gt_file,pred_file,score
+local_dataset/csv_files/test_labels.csv,code/experiments/swinv2_tiny_patch4_windows8_ceklloss/best_test_predicted.csv,0.0026370083450013636
