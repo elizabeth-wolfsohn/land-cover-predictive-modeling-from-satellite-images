@@ -1,0 +1,2 @@
+configuration,temperature,KL_soft,experiments
+ensemble + TTA,1.0,0.0031942875348772073,2026-11-25_19-50-20_deeplabv3plus_A_s42 + 2026-11-25_20-59-04_deeplabv3plus_A_s1 + 2026-11-25_23-10-42_deeplabv3plus_A_s2 + 2026-11-26_01-26-22_deeplabv3plus_A_s3

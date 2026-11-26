@@ -1,0 +1,18 @@
+25/11 19:48 - Début (120 époques par run), espace disque libre : 4 Go
+25/11 19:48 - ARRÊT : moins de 8 Go libres
+25/11 19:50 - Début (120 époques par run), espace disque libre : 6 Go
+25/11 19:50 - début A_s42
+25/11 20:59 - fin A_s42 (2026-11-25_19-50-20_deeplabv3plus_A_s42) | 118/120 | test: KL argmax = 0.01454 | KL soft = 0.00389 | mean F1 = 72.1 % | mean IoU = 61.9 %
+25/11 20:59 - début A_s1
+25/11 22:06 - fin A_s1 (2026-11-25_20-59-04_deeplabv3plus_A_s1) | 108/120 | test: KL argmax = 0.01494 | KL soft = 0.00391 | mean F1 = 72.2 % | mean IoU = 62.0 %
+25/11 22:06 - début B_ce_s42
+25/11 23:10 - fin B_ce_s42 (2026-11-25_22-06-17_deeplabv3plus_B_ce_s42) | 112/120 | test: KL argmax = 0.01778 | KL soft = 0.00850 | mean F1 = 73.6 % | mean IoU = 62.6 %
+25/11 23:10 - début A_s2
+26/11 00:18 - fin A_s2 (2026-11-25_23-10-42_deeplabv3plus_A_s2) | 118/120 | test: KL argmax = 0.01463 | KL soft = 0.00413 | mean F1 = 72.3 % | mean IoU = 62.0 %
+26/11 00:18 - début C_noaug
+26/11 01:26 - fin C_noaug (2026-11-26_00-18-53_deeplabv3plus_C_noaug) | 107/120 | test: KL argmax = 0.01304 | KL soft = 0.00320 | mean F1 = 73.6 % | mean IoU = 63.0 %
+26/11 01:26 - début A_s3
+26/11 02:35 - fin A_s3 (2026-11-26_01-26-22_deeplabv3plus_A_s3) | 111/120 | test: KL argmax = 0.01573 | KL soft = 0.00401 | mean F1 = 73.4 % | mean IoU = 62.6 %
+26/11 02:35 - ensemble + TTA de A_s42 A_s1 A_s2 A_s3
+26/11 03:29 - ensemble : Best configuration on the validation set: ensemble + TTA, temperature 1.0 | KL divergence (test): 0.0031942875348772073
+26/11 03:29 - TERMINÉ - résultats : results/summary_test_split.csv et results/summary_improvements_night.csv

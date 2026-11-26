@@ -1,0 +1,2 @@
+split,best_epoch,KL_soft,KL_argmax
+val,111,0.00426,0.01363

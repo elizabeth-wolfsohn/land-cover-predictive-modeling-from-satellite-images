@@ -1,0 +1,13 @@
+configuration: ensemble + TTA
+temperature: 1.0
+tta_transforms: 8
+experiments:
+- 2026-11-25_19-50-20_deeplabv3plus_A_s42
+- 2026-11-25_20-59-04_deeplabv3plus_A_s1
+- 2026-11-25_23-10-42_deeplabv3plus_A_s2
+- 2026-11-26_01-26-22_deeplabv3plus_A_s3
+names:
+- A_s42
+- A_s1
+- A_s2
+- A_s3

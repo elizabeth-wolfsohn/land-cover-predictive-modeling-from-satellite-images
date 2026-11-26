@@ -1,0 +1,31 @@
+2026-11-25 20:58:22.507420: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+2026-11-25 20:58:22.532276: I tensorflow/core/platform/cpu_feature_guard.cc:210] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX_VNNI FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2026-11-25 20:58:23.038402: I tensorflow/core/util/port.cc:153] oneDNN custom operations are on. You may see slightly different numerical results due to floating-point round-off errors from different computation orders. To turn them off, set the environment variable `TF_ENABLE_ONEDNN_OPTS=0`.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1795636703.278853   60524 gpu_device.cc:2020] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 21824 MB memory:  -> device: 0, name: NVIDIA GeForce RTX 4090, pci bus id: 0000:01:00.0, compute capability: 8.9
+WARNING:tensorflow:Unable to restore custom metric. Please ensure that the layer implements `get_config` and `from_config` when saving. In addition, please use the `custom_objects` arg when calling `load_model()`.
+WARNING:tensorflow:Unable to restore custom metric. Please ensure that the layer implements `get_config` and `from_config` when saving. In addition, please use the `custom_objects` arg when calling `load_model()`.
+2026-11-25 20:58:26.018942: I external/local_xla/xla/stream_executor/cuda/cuda_dnn.cc:473] Loaded cuDNN version 92801
+
+=== 2026-11-25_19-50-20_deeplabv3plus_A_s42: best epoch on validation = 118/120
+    val : KL argmax = 0.01282 | KL soft = 0.00404 | mean F1 = 71.7 % | mean IoU = 61.2 %
+    test: KL argmax = 0.01454 | KL soft = 0.00389 | mean F1 = 72.1 % | mean IoU = 61.9 %
+                    Recall (%)  Precision (%)  F1-score (%)  IoU (%)
+Ground Truth Class                                                  
+artificial                83.6           77.8          80.6     67.5
+cultivated                86.9           87.3          87.1     77.1
+broadleaf                 87.8           87.0          87.4     77.6
+coniferous                80.0           83.1          81.5     68.8
+herbaceous                80.5           81.1          80.8     67.8
+natural                   66.4           68.8          67.6     51.0
+snow                       0.0            0.0           0.0      0.0
+water                     93.2           90.6          91.9     85.0
+
+                             experiment  best_epoch  epochs  KL_val_argmax  KL_val_soft  val_mean_Recall  val_mean_Precision  val_mean_F1-score  val_mean_IoU  KL_test_argmax  KL_test_soft  test_mean_Recall  test_mean_Precision  test_mean_F1-score  test_mean_IoU
+      2026-11-24_15-12-34_deeplabv3plus          40      40        0.02458      0.00857            69.49               71.45              70.42         59.74         0.02706       0.00861             69.83                72.42               71.00          60.49
+      2026-11-24_15-36-31_deeplabv3plus          35      40        0.01971      0.00600            71.57               71.01              71.14         60.61         0.02023       0.00485             72.39                72.43               72.39          62.27
+      2026-11-25_18-21-21_deeplabv3plus          37      40        0.02002      0.00527            70.11               72.18              71.03         60.63         0.01624       0.00504             70.97                72.99               71.89          61.67
+2026-11-25_19-50-20_deeplabv3plus_A_s42         118     120        0.01282      0.00404            71.83               71.56              71.67         61.24         0.01454       0.00389             72.30                71.97               72.12          61.87
+
+Saved to /home/ndp/land-cover-predictive-modeling-from-satellite-images/results/summary_test_split.csv

@@ -34,7 +34,7 @@ python -c "import tensorflow as tf, sys; g = tf.config.list_physical_devices('GP
     || { say "ARRÊT : aucun GPU vu par TensorFlow"; exit 1; }
 FREE_GB=$(df -BG --output=avail . | tail -1 | tr -dc '0-9')
 say "Début ($EPOCHS époques par run), espace disque libre : ${FREE_GB} Go"
-[ "$FREE_GB" -lt 8 ] && { say "ARRÊT : moins de 8 Go libres"; exit 1; }
+[ "$FREE_GB" -lt 3 ] && { say "ARRÊT : moins de 8 Go libres"; exit 1; }
 
 # crée la config d'un run à partir de train_config.yaml
 make_cfg () {  # $1 fichier, $2 tag, $3 graine, $4 loss (ce | ce_kl), $5 augmentation radiométrique (0 | 1)

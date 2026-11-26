@@ -1,0 +1,50 @@
+seed: 42
+batch_size: 32
+epochs: 120
+lr: 0.001
+dataset_folder: /home/ndp/Downloads/additional_files_earthcube_emu4zqr/dataset
+xp_rootdir: experiments
+max_train_samples: null
+max_val_samples: null
+steps_per_epoch: null
+lr_patience: 5
+val_samples_csv: null
+train_image_path: local_dataset/csv_files/train_images.csv
+val_image_path: local_dataset/csv_files/validation_images.csv
+test_image_path: local_dataset/csv_files/test_images.csv
+model:
+  name: deeplabv3plus
+  kwargs:
+    pretrained: imagenet
+    backbone_alpha: 1.0
+class_weighting:
+- 0.0
+- 0.0
+- 1.9104365
+- 0.7414725
+- 0.8962822
+- 1.5187677
+- 0.8169715
+- 4.7712197
+- 10.0
+- 2.7509751
+loss:
+  type: ce
+  ce_weight: 1.0
+  kl_weight: 10.0
+augmentation:
+  radiometric:
+    prob: 0.8
+    brightness: 0.1
+    contrast: 0.1
+    band_jitter: 0.05
+    noise: 0.03
+lr_schedule:
+  type: cosine
+  min_lr: 1.0e-05
+  warmup_epochs: 2
+checkpoint_best_only: true
+xp_tag: B_ce_s42
+show_plots: false
+num_dataset_samples: 10
+num_prediction_samples: 4
